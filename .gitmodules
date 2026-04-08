@@ -1,0 +1,9 @@
+[submodule "SpecFrameworks/OpenSpec-cn"]
+	path = SpecFrameworks/OpenSpec-cn
+	url = https://github.com/studyzy/OpenSpec-cn
+[submodule "SpecFrameworks/OpenSpec"]
+	path = SpecFrameworks/OpenSpec
+	url = https://github.com/Fission-AI/OpenSpec
+[submodule "SpecFrameworks/Trellis"]
+	path = SpecFrameworks/Trellis
+	url = https://github.com/mindfold-ai/trellis
