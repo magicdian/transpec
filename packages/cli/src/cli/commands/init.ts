@@ -15,7 +15,8 @@ import * as path from 'path';
 import inquirer from 'inquirer';
 import ora from 'ora';
 import { frameworkRegistry } from '../../core/framework/index.js';
-import { IdeRegistry, ClaudeCodeAdapter, isInteractive } from '../../core/ide/index.js';
+import { IdeRegistry, isInteractive } from '../../core/ide/index.js';
+import { ClaudeCodeAdapter, CursorAdapter, CodexAdapter, OpenCodeAdapter } from '../../core/ide/adapters/index.js';
 import { Logger, LogModules, LogLevel, getLogger } from '../../core/logging/index.js';
 
 const logger = getLogger(LogModules.CLI);
@@ -64,19 +65,19 @@ async function promptForIdeSelection(): Promise<string[]> {
       disabled: false,
     },
     {
-      name: 'OpenCode (Coming soon)',
-      value: 'opencode',
-      disabled: '(not yet supported)',
-    },
-    {
-      name: 'Codex (Coming soon)',
-      value: 'codex',
-      disabled: '(not yet supported)',
-    },
-    {
-      name: 'Cursor (Coming soon)',
+      name: 'Cursor',
       value: 'cursor',
-      disabled: '(not yet supported)',
+      disabled: false,
+    },
+    {
+      name: 'Codex',
+      value: 'codex',
+      disabled: false,
+    },
+    {
+      name: 'OpenCode',
+      value: 'opencode',
+      disabled: false,
     },
   ];
 
@@ -284,6 +285,9 @@ export async function initCommand(options: InitOptions) {
     // Register IDE adapters
     const ideRegistry = IdeRegistry.getInstance();
     ideRegistry.register(new ClaudeCodeAdapter());
+    ideRegistry.register(new CursorAdapter());
+    ideRegistry.register(new CodexAdapter());
+    ideRegistry.register(new OpenCodeAdapter());
 
     // Detect frameworks
     logger.debug('Detecting frameworks in project', { path: projectPath });
