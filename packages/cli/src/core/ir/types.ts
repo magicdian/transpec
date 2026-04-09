@@ -99,6 +99,34 @@ export interface ProjectSummary {
 }
 
 /**
+ * B+C Hybrid Batch Processing for Large Projects
+ *
+ * B+C Strategy: Relation-driven batch processing with bounded summaries
+ * - B (Batch): Group entities by dependency depth
+ * - C (Context): Include preceding batch summaries as context
+ */
+
+/**
+ * A single batch of entities for processing
+ */
+export interface PreprocessBatch {
+  batchId: number;
+  entityIds: string[];
+  dependencies: string[];       // IDs of entities from preceding batches
+  contextSummary?: string;       // Combined summaries from preceding batches
+  results: EnhancedAnalysis[];
+}
+
+/**
+ * State for batch processing across entire project
+ */
+export interface PreprocessState {
+  batches: PreprocessBatch[];
+  entityResults: Map<string, EnhancedAnalysis>;
+  globalSummary: ProjectSummary;
+}
+
+/**
  * Validation issue
  */
 export interface ValidationIssue {

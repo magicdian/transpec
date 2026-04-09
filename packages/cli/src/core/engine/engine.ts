@@ -10,12 +10,11 @@
  * 6. Emit - Core IR → Target files
  */
 
-import * as path from 'path';
-import * as fs from 'fs/promises';
-import { Logger, LogModules, LogLevel, getLogger } from '../logging/index.js';
+import { LogModules, getLogger } from '../logging/index.js';
 import { SQLiteStorage } from '../storage/sqlite.js';
 import { FrameworkAdapter, FrameworkRegistry } from '../framework/index.js';
-import { CoreEntity, CoreRelation, ConversionResult, IRMetadata, ValidationIssue } from '../ir/types.js';
+import { CoreEntity, CoreRelation, ConversionResult, EnhancedAnalysis, IRMetadata, PreprocessState, ValidationIssue } from '../ir/types.js';
+import { BatchProcessor } from './batch-processor.js';
 
 const logger = getLogger(LogModules.ENGINE);
 
@@ -203,16 +202,111 @@ export class ConversionEngine {
     const startTime = Date.now();
     const issues: ValidationIssue[] = [];
 
-    // Placeholder for AI analysis
-    logger.warn('AI analysis not yet implemented - entities used as-is');
+    try {
+      logger.info('Starting B+C hybrid batch analysis', { entityCount: this.entities.length });
+
+      // Create batch processor
+      const batchProcessor = new BatchProcessor(this.entities, this.relations);
+
+      // Process batches with simulated analyzer
+      // In production, this would call an LLM API
+      const preprocessState: PreprocessState = await batchProcessor.processBatches(
+        async (batch, batchEntities) => {
+          // Simulate LLM analysis
+          // In production, this would call the SkillExecutor or LLM API
+          return this.simulateEnhancedAnalysis(batchEntities);
+        }
+      );
+
+      // Apply analysis results to entities
+      this.entities = batchProcessor.applyAnalysisToEntities(this.entities, preprocessState);
+
+      // Update metadata
+      this.storage.saveEntities(this.entities);
+
+      logger.info('Batch analysis completed', {
+        batches: preprocessState.batches.length,
+        entitiesAnalyzed: preprocessState.entityResults.size,
+      });
+
+    } catch (error) {
+      issues.push({ type: 'error', message: `Analysis failed: ${(error as Error).message}` });
+      logger.error('Analysis phase failed', { error: (error as Error).message });
+    }
 
     return {
       phase: ConversionPhase.ANALYZE,
-      success: true,
+      success: issues.length === 0,
       entitiesProcessed: this.entities.length,
       issues,
       duration: Date.now() - startTime,
     };
+  }
+
+  /**
+   * Simulate enhanced analysis for development/testing
+   * In production, this would call LLM APIs via SkillExecutor
+   */
+  private simulateEnhancedAnalysis(entities: CoreEntity[]): EnhancedAnalysis[] {
+    return entities.map(entity => ({
+      intent: `Analyze: ${entity.name}`,
+      keyPoints: this.extractKeyPoints(entity.content),
+      dependencies: this.extractDependencies(entity),
+      constraints: this.extractConstraints(entity),
+      requirement: this.extractRequirements(entity),
+      design: this.extractDesign(entity),
+      implementNote: this.extractImplementNotes(entity),
+    }));
+  }
+
+  private extractKeyPoints(content: string): string[] {
+    // Simple extraction - look for markdown headers
+    const headers = content.match(/^#+\s+(.+)$/gm) || [];
+    return headers.map(h => h.replace(/^#+\s+/, '')).slice(0, 5);
+  }
+
+  private extractDependencies(entity: CoreEntity): string[] {
+    // Look for @mentions or reference patterns
+    const mentions = entity.content.match(/@[\w-]+/g) || [];
+    return [...new Set(mentions.map(m => m.slice(1)))];
+  }
+
+  private extractConstraints(entity: CoreEntity): string[] {
+    // Look for constraint keywords
+    const constraints: string[] = [];
+    const constraintPatterns = [
+      /must not\s+([^.]+)/gi,
+      /cannot\s+([^.]+)/gi,
+      /limited to\s+([^.]+)/gi,
+      /only\s+([^.]+)/gi,
+    ];
+
+    for (const pattern of constraintPatterns) {
+      const matches = entity.content.match(pattern) || [];
+      constraints.push(...matches.map(m => m.trim()));
+    }
+
+    return [...new Set(constraints)].slice(0, 5);
+  }
+
+  private extractRequirements(entity: CoreEntity): string[] {
+    // Look for requirement-like content
+    const reqMatches = entity.content.match(/(?:requirement|shall|must have)[^.]*\.?/gi) || [];
+    return reqMatches.map(r => r.trim()).slice(0, 5);
+  }
+
+  private extractDesign(entity: CoreEntity): string[] {
+    // Look for design decisions in implementation notes
+    const designMatches = entity.content.match(/(?:design|architecture|approach)[^.]*\.?/gi) || [];
+    return designMatches.map(d => d.trim()).slice(0, 5);
+  }
+
+  private extractImplementNotes(entity: CoreEntity): string[] {
+    // Look for TODO/NOTE comments
+    const notes: string[] = [];
+    const noteMatches = entity.content.match(/(?:TODO|FIXME|NOTE)[^:]*(?::\s*)?([^.]+)/gi) || [];
+    notes.push(...noteMatches.map(n => n.trim()));
+    return [...new Set(notes)].slice(0, 5);
   }
 
   private async runTransformPhase(): Promise<PhaseResult> {
