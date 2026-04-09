@@ -307,3 +307,48 @@ Extended transpec CLI to support multiple AI coding IDEs. Implemented CursorAdap
 ### Next Steps
 
 - None - task complete
+
+
+## Session 10: transpec-preprocess 命令和 Skill 系统实现
+
+**Date**: 2026-04-10
+**Task**: transpec-preprocess 命令和 Skill 系统实现
+
+### Summary
+
+实现 transpec-preprocess 命令和完善 Skill 系统
+
+## 完成内容
+- 创建 transpec-preprocess 命令 (AI 语义分析)
+- 创建 openspec-preprocess 和 trellis-preprocess skills
+- SkillExecutor 添加 getAll/getByTrigger 方法
+- 更新 directory-structure.md 规范：明确 .transpec 是用户运行时目录
+- 版本更新: 2604.10.1
+
+## 关键规范更新
+- 明确 .transpec/ 是用户生产场景目录 (gitignored)
+- 内置 skills 放在 src/core/skill/skills/
+- 用户 skills 放在 .transpec/skills/
+
+### Main Changes
+
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7917951` | (see git log) |
+| `7917951` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
