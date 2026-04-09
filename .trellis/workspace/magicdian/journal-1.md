@@ -382,3 +382,35 @@ Extended transpec CLI to support multiple AI coding IDEs. Implemented CursorAdap
 ### Next Steps
 
 - None - task complete
+
+
+## Session 12: 修复 transpec apply 生成 Trellis specs 流程
+
+**Date**: 2026-04-10
+**Task**: 修复 transpec apply 生成 Trellis specs 流程
+
+### Summary
+
+修复 transpec apply 命令工作流问题。根因：1) skill 路径计算错误 2) CLI 未列出 post-migration skills 3) OpenSpec spec vs Trellis spec/ 语义差异未说明。修复：1) 修正路径指向 .transpec/skills/ 2) apply 只在目标为 trellis 时列出 generate-trellis-specs skill 3) 更新 ir-design-principles.md 和 conversion-pipeline.md 规范文档。
+
+### Main Changes
+
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3dc8e15` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
