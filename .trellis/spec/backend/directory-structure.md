@@ -36,11 +36,10 @@ packages/cli/
 │   │   │   ├── index.ts        # Framework registry
 │   │   │   ├── registry.ts     # Adapter registry
 │   │   │   ├── base-adapter.ts # Base adapter interface
-│   │   │   └── adapters/       #具体 framework adapters
+│   │   │   └── adapters/       # Framework adapters
 │   │   │       ├── index.ts
-│   │   │       ├── openspec.ts
-│   │   │       ├── trellis.ts
-│   │   │       └── speckit.ts
+│   │   │       ├── openspec.ts # OpenSpec framework adapter
+│   │   │       └── trellis.ts  # Trellis framework adapter
 │   │   ├── ir/                 # Intermediate Representation
 │   │   │   ├── types.ts        # Core IR type definitions
 │   │   │   └── index.ts

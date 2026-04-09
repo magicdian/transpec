@@ -14,25 +14,26 @@ This directory contains guidelines for backend development. Fill in each file wi
 
 | Guide | Description | Status |
 |-------|-------------|--------|
-| [Directory Structure](./directory-structure.md) | Module organization and file layout | To fill |
-| [Database Guidelines](./database-guidelines.md) | ORM patterns, queries, migrations | To fill |
-| [Error Handling](./error-handling.md) | Error types, handling strategies | To fill |
-| [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | To fill |
-| [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | To fill |
+| [Directory Structure](./directory-structure.md) | Module organization and file layout | ✅ Complete |
+| [Database Guidelines](./database-guidelines.md) | SQLite schema, transactions, queries | ✅ Complete |
+| [Error Handling](./error-handling.md) | Error types, handling strategies | ✅ Complete |
+| [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | ✅ Complete |
+| [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | ✅ Complete |
+| [IR Design Principles](./ir-design-principles.md) | Core IR types, metadata, type mapping | ✅ Complete |
+| [Framework Adapter Pattern](./framework-adapter-pattern.md) | Adapter interface, registry, implementation | ✅ Complete |
+| [Conversion Pipeline](./conversion-pipeline.md) | 6-phase engine, validation, error handling | ✅ Complete |
+| [Testing Guidelines](./testing-guidelines.md) | Vitest, test structure, coverage requirements | ✅ Complete |
 
 ---
 
-## How to Fill These Guidelines
+## Transpec-Specific Guidelines
 
-For each guideline file:
+These guidelines document **Transpec's actual conventions** for framework conversion:
 
-1. Document your project's **actual conventions** (not ideals)
-2. Include **code examples** from your codebase
-3. List **forbidden patterns** and why
-4. Add **common mistakes** your team has made
-
-The goal is to help AI assistants and new team members understand how YOUR project works.
+- **IR Design Principles**: Stable ABI IR schema - never changes when adding frameworks
+- **Framework Adapter Pattern**: Each framework (OpenSpec, Trellis) has its own adapter
+- **Conversion Pipeline**: 6-phase Parse → Analyze → Transform → Validate → Confirm → Emit
 
 ---
 
-**Language**: All documentation should be written in **English**.
+**Language**: All documentation is written in **English**.
