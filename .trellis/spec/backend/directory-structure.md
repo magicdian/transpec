@@ -51,7 +51,12 @@ packages/cli/
 │   │   │   └── index.ts
 │   │   └── skill/               # Skill system
 │   │       ├── index.ts
-│   │       └── skill.ts
+│   │       ├── skill.ts
+│   │       └── skills/           # Built-in skill definitions (compiled to dist)
+│   │           ├── analyze-semantics/
+│   │           ├── framework-mapper/
+│   │           ├── openspec-preprocess/
+│   │           └── trellis-preprocess/
 │   │
 │   └── ide/                    # IDE integration (future)
 │
@@ -161,3 +166,75 @@ This is a CLI tool, so there is NO:
 - Frontend components
 
 If you're adding a feature, ask: "Is this CLI logic or core logic?" and place accordingly.
+
+---
+
+## Runtime Directories: `.transpec/`
+
+**`.transpec/` is the user's production project directory** - it is created in the user's project when they run `transpec init`. This directory is **gitignored** and contains user-specific runtime data.
+
+### Directory Purpose
+
+| Directory | Purpose | User/Built-in |
+|-----------|--------|--------------|
+| `.transpec/` | Root runtime directory | User project |
+| `.transpec/ir/` | SQLite database for IR storage | Runtime generated |
+| `.transpec/skills/` | User's custom skills | User project |
+| `.transpec/config.yaml` | Project configuration | User project |
+
+### Built-in vs User Skills
+
+| Location | Type | Purpose | Example |
+|----------|------|---------|---------|
+| `packages/cli/src/core/skill/skills/` | **Built-in** | Skills bundled with the package | `openspec-preprocess`, `trellis-preprocess` |
+| `.transpec/skills/` | **User** | User's custom skills for their project | `generate-trellis-specs` |
+
+### IMPORTANT: Where to Put Skills?
+
+**DO NOT put skill definitions in `.transpec/`** - that directory is for user runtime data only.
+
+- **Built-in skills** (shipped with package) → `packages/cli/src/core/skill/skills/<skill-name>/SKILL.md`
+- **User custom skills** (project-specific) → `.transpec/skills/<skill-name>/SKILL.md`
+
+### Example: Adding a New Built-in Skill
+
+```bash
+# 1. Create skill directory in source
+mkdir -p packages/cli/src/core/skill/skills/my-new-skill/
+
+# 2. Add SKILL.md with YAML frontmatter
+cat > packages/cli/src/core/skill/skills/my-new-skill/SKILL.md << 'EOF'
+---
+name: my-new-skill
+description: "Description of what this skill does"
+model: opus
+trigger: semantic-analysis
+---
+
+## Skill content here...
+EOF
+
+# 3. The skill will be loaded from src/ and compiled to dist/
+```
+
+### Example: User Creating Custom Skill
+
+```bash
+# In user's project directory (after running transpec init)
+mkdir -p .transpec/skills/my-custom-skill/
+cat > .transpec/skills/my-custom-skill/SKILL.md << 'EOF'
+---
+name: my-custom-skill
+description: "My project-specific analysis"
+trigger: custom-analysis
+---
+
+## Custom skill content...
+EOF
+```
+
+### Why This Separation?
+
+1. **Built-in skills** are version-controlled with the package and updated via `npm update`
+2. **User skills** are project-specific and persist across package updates
+3. **`.transpec/`** is gitignored, so user skills won't pollute the repository

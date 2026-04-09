@@ -152,6 +152,20 @@ export class SkillExecutor {
   }
 
   /**
+   * Get all available skills
+   */
+  getAll(): Skill[] {
+    return this.loader.getAll();
+  }
+
+  /**
+   * Get skills by trigger
+   */
+  getByTrigger(trigger: string): Skill[] {
+    return this.loader.getByTrigger(trigger);
+  }
+
+  /**
    * Execute a skill with given context
    * In a full implementation, this would call an AI API
    */

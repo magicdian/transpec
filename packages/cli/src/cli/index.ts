@@ -8,6 +8,7 @@ import { detectCommand } from './commands/detect.js';
 import { initCommand } from './commands/init.js';
 import { convertCommand } from './commands/convert.js';
 import { applyCommand } from './commands/apply.js';
+import { preprocessCommand } from './commands/preprocess.js';
 import { versionCommand } from './commands/version.js';
 import { Logger, LogLevel } from '../core/logging/index.js';
 import { getVersionString } from '../core/version.js';
@@ -66,6 +67,14 @@ program
   .option('-f, --force', 'Force re-run conversion even if already done')
   .option('-v, --verbose', 'Enable verbose logging')
   .action(applyCommand);
+
+program
+  .command('preprocess')
+  .description('Run AI-powered semantic analysis on IR entities')
+  .option('-p, --project-path <path>', 'Project path (default: current directory)')
+  .option('-f, --force', 'Force re-run even if already preprocessed')
+  .option('-v, --verbose', 'Enable verbose logging')
+  .action(preprocessCommand);
 
 program
   .command('version')
