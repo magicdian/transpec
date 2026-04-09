@@ -70,8 +70,9 @@ program
 
 program
   .command('preprocess')
-  .description('Run AI-powered semantic analysis on IR entities')
+  .description('Run convert + AI semantic analysis on IR entities')
   .option('-p, --project-path <path>', 'Project path (default: current directory)')
+  .option('-s, --skip-convert', 'Skip convert step (use existing IR)')
   .option('-f, --force', 'Force re-run even if already preprocessed')
   .option('-v, --verbose', 'Enable verbose logging')
   .action(preprocessCommand);

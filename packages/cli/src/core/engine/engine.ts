@@ -474,4 +474,68 @@ export class ConversionEngine {
   getPhaseResults(): PhaseResult[] {
     return this.phaseResults;
   }
+
+  /**
+   * Run Transform + Emit phases only (for apply command)
+   * Assumes Parse has already been done (by preprocess)
+   */
+  async runTransformEmit(): Promise<ConversionResult> {
+    const startTime = Date.now();
+    let overallSuccess = true;
+
+    try {
+      // Load entities from storage
+      this.entities = this.storage.loadAllEntities();
+      this.relations = this.storage.loadRelations();
+      logger.debug('Entities loaded from storage', { count: this.entities.length });
+
+      // Phase 3: Transform
+      logger.info(`[${ConversionPhase.TRANSFORM}] Starting`);
+      const transformResult = await this.runTransformPhase();
+      this.phaseResults.push(transformResult);
+      if (!transformResult.success) overallSuccess = false;
+
+      // Phase 4: Validate
+      logger.info(`[${ConversionPhase.VALIDATE}] Starting`);
+      const validateResult = await this.runValidatePhase();
+      this.phaseResults.push(validateResult);
+      if (!validateResult.success) overallSuccess = false;
+
+      // Phase 5: Confirm (auto-confirm)
+      logger.debug(`[${ConversionPhase.CONFIRM}] Auto-confirmed for CLI mode`);
+
+      // Phase 6: Emit
+      if (!this.options.dryRun) {
+        logger.info(`[${ConversionPhase.EMIT}] Starting`);
+        const emitResult = await this.runEmitPhase();
+        this.phaseResults.push(emitResult);
+        if (!emitResult.success) overallSuccess = false;
+      } else {
+        logger.info('Dry run - skipping emit phase');
+      }
+
+      const duration = Date.now() - startTime;
+      logger.info('Transform+Emit completed', {
+        success: overallSuccess,
+        duration: `${duration}ms`,
+      });
+
+      return {
+        success: overallSuccess,
+        conversionId: `conv-${Date.now()}`,
+        entitiesProcessed: this.entities.length,
+        issues: this.phaseResults.flatMap(p => p.issues),
+        outputPath: this.options.outputPath,
+      };
+
+    } catch (error) {
+      logger.error('Transform+Emit failed', { error: (error as Error).message });
+      return {
+        success: false,
+        conversionId: `conv-${Date.now()}`,
+        entitiesProcessed: this.entities.length,
+        issues: [{ type: 'error', message: (error as Error).message }],
+      };
+    }
+  }
 }

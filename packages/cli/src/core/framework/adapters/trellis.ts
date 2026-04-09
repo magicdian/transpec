@@ -224,14 +224,16 @@ export class TrellisAdapter extends BaseFrameworkAdapter {
         logger.debug('Emitted design.md', { path: baseDir });
       }
     } else {
-      // For spec entities, emit to legacy/specs/ since OpenSpec specs
-      // are feature specifications, not Trellis development guidelines
+      // OpenSpec specs describe features (what the project does)
+      // Trellis spec/ describes development guidelines (how to develop)
+      // These are semantically different - OpenSpec specs go to legacy/
+      // Trellis spec/ must be generated separately via transpec init
       const legacyDir = path.join(targetPath, '.trellis', 'legacy', 'specs', this.slugify(entity.name));
       await fs.mkdir(legacyDir, { recursive: true });
 
       const specPath = path.join(legacyDir, 'spec.md');
       await fs.writeFile(specPath, entity.content);
-      logger.debug('Emitted spec to legacy location', { path: specPath });
+      logger.debug('Emitted spec to legacy location (Trellis spec/ is generated separately)', { path: specPath });
     }
   }
 

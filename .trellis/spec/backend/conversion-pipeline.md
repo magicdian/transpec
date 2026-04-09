@@ -325,24 +325,70 @@ export interface ValidationIssue {
 
 ## CLI Integration
 
+### CLI Commands vs Engine Phases
+
+The CLI commands orchestrate engine phases and skills differently:
+
+| Command | What it does |
+|---------|--------------|
+| `transpec convert` | Run engine.run() - all 6 phases |
+| `transpec preprocess` | Parse phase + execute preprocess skills |
+| `transpec apply` | Transform+Emit phases + guide post-migration skills |
+
+### Command Workflow
+
+```
+transpec preprocess:
+  ├── Step 0: Run convert (Parse phase only, via engine.run())
+  ├── Step 1: Load entities from IR storage
+  ├── Step 2: Load preprocess skills
+  ├── Step 3: Extract enhancedAnalysis (simulated)
+  └── Output: Entities with enhancedAnalysis metadata
+
+transpec apply (target=trellis):
+  ├── Step 4: Run Transform+Emit (via engine.runTransformEmit())
+  ├── Step 5: List post-migration skills for Trellis (generate-trellis-specs)
+  └── Output: Guided next step for agent
+
+transpec apply (target=other):
+  └── Output: Transform+Emit only
+```
+
+### Skills vs CLI
+
+**Transpec CLI does NOT execute skills** - it lists available skills and guides agents to execute them.
+
 ```typescript
-// In convertCommand
-const engine = new ConversionEngine({
-  sourceFramework,
-  targetFramework,
-  projectPath,
-  outputPath: projectPath,
-  mode: mode as 'sampling' | 'full' | 'on-demand',
-  dryRun: options.dryRun || false,
-}, dbPath);
+// CLI lists skills, does NOT execute
+const skills = executor.getByTrigger('post-migration');
+for (const skill of skills) {
+  console.log(`Found skill: ${skill.name}`);
+  console.log(`Read .transpec/skills/${skill.name}/SKILL.md to execute`);
+}
 
-await engine.initialize();
-const result = await engine.run();
+// Agent reads and executes the skill
+```
 
-// Display results
-if (!result.success) {
-  console.error(chalk.red('\nConversion completed with errors.\n'));
-  process.exit(1);
+**Skill triggers**:
+- `preprocess`: Run before transform phase (analyzes source content)
+- `post-migration`: Run after emit phase (generates target-specific artifacts)
+
+### Example: generate-trellis-specs
+
+This skill has `trigger: post-migration` and is Trellis-specific:
+
+1. CLI (`transpec apply`) lists it in Step 5 (only for Trellis target)
+2. Agent reads `.transpec/skills/generate-trellis-specs/SKILL.md`
+3. Agent analyzes project code to generate `spec/backend/`, `spec/frontend/`, `spec/guides/`
+
+```typescript
+// In apply.ts - only for Trellis target
+if (targetFramework === 'trellis') {
+  const skills = executor.getByTrigger('post-migration');
+  for (const skill of skills) {
+    console.log(`Found Trellis skill: ${skill.name}`);
+  }
+  console.log('Read .transpec/skills/generate-trellis-specs/SKILL.md');
 }
 ```
 

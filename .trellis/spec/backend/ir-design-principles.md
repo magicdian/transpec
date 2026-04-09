@@ -456,6 +456,61 @@ Output in JSON format matching EnhancedAnalysis interface.
 
 ---
 
+## OpenSpec vs Trellis Spec Semantics
+
+**Critical**: OpenSpec `spec` and Trellis `spec/` directory have **different meanings**.
+
+| Framework | Concept | Example |
+|-----------|---------|---------|
+| OpenSpec | Feature specification | "annotation normalization", "cross platform cli" |
+| Trellis | Development guidelines | `spec/backend/index.md`, `spec/frontend/hook-guidelines.md` |
+
+### OpenSpec Spec → Trellis Legacy
+
+When converting OpenSpec specs to Trellis:
+- OpenSpec specs go to `.trellis/legacy/specs/` (preserved, not transformed)
+- They describe **what the project does** (features)
+- Trellis spec/ describes **how to develop** (guidelines)
+
+### Generating Trellis Spec Directory
+
+Trellis `spec/` directory must be **generated from project analysis**, not converted from OpenSpec specs:
+
+```
+.trellis/
+├── spec/
+│   ├── backend/           # Generated from project analysis
+│   │   ├── index.md      # Backend guidelines index
+│   │   └── *.md          # Topic-specific backend docs
+│   ├── frontend/          # Generated from project analysis
+│   │   └── *.md          # Topic-specific frontend docs
+│   └── guides/           # Generated from project analysis
+│       └── *.md          # Thinking guides
+├── legacy/
+│   └── specs/            # Original OpenSpec specs (preserved)
+│       └── {feature}/
+│           └── spec.md
+└── tasks/                # Converted from OpenSpec changes
+    └── {task}/
+```
+
+### Adapter Emit Responsibility
+
+Each adapter's `emit()` must handle framework-specific directory generation:
+
+```typescript
+// TrellisAdapter.emit() - for spec type entities
+if (entity.extendedType === 'spec') {
+  // OpenSpec specs → legacy/specs/ (preserve original)
+  await emitToLegacy(entity);
+
+  // Trellis spec/ → generated separately during init
+  // (not during convert - that's a different operation)
+}
+```
+
+---
+
 ## Common Mistakes
 
 ### 1. Parsing content instead of preserving
@@ -512,6 +567,44 @@ entity.metadata.enhancedAnalysis = {
   // ...
 };
 ```
+
+### 5. Wrong skill directory path calculation
+
+When accessing built-in skills from CLI commands, ensure path calculation is correct:
+
+```typescript
+// WRONG - miscounted path levels
+const packageRoot = path.resolve(currentDir, '..', '..', '..', '..'); // Too many levels!
+return path.join(packageRoot, 'src', 'core', 'skill', 'skills');
+
+// CORRECT - count from dist/cli/commands/apply.js
+// 1 level up = dist/cli/commands
+// 2 levels up = dist/cli
+// 3 levels up = dist
+// 4 levels up = packages/cli (package root)
+const packageRoot = path.resolve(currentDir, '..', '..', '..', '..');
+return path.join(packageRoot, '.transpec', 'skills');
+```
+
+**Rule**: Built-in skills are in `.transpec/skills/` (copied during build), NOT `src/core/skill/skills`.
+
+### 6. CLI doesn't execute skills - it guides agents
+
+Transpec CLI does NOT call AI APIs. Skills are **executed by AI agents**, not by the CLI.
+
+```typescript
+// WRONG - CLI trying to execute skills
+const result = await executor.execute(skill.name, skillContext); // simulateExecution!
+
+// CORRECT - CLI lists skills and guides agents to execute them
+console.log('Found skill:', skill.name);
+console.log('Read .transpec/skills/' + skill.name + '/SKILL.md to execute');
+```
+
+**CLI workflow for skills**:
+1. CLI lists available skills by trigger (e.g., `post-migration`)
+2. CLI prints guidance for agents to read skill files
+3. Agent reads skill file and executes the instructions
 
 ---
 

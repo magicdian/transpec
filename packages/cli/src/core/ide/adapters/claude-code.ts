@@ -3,6 +3,7 @@
  *
  * Configures Claude Code for use with transpec by generating:
  * - .claude/settings.json - Hooks configuration
+ * - .claude/commands/transpec/preprocess.md - /transpec:preprocess command
  * - .claude/commands/transpec/apply.md - /transpec:apply command
  * - .claude/hooks/transpec-context.py - Context injection hook
  */
@@ -70,6 +71,9 @@ export class ClaudeCodeAdapter implements IdeAdapter {
     // Generate settings.json
     await this.generateSettings(claudeDir);
 
+    // Generate /transpec:preprocess command
+    await this.generatePreprocessCommand(commandsDir);
+
     // Generate /transpec:apply command
     await this.generateApplyCommand(commandsDir);
 
@@ -131,23 +135,24 @@ export class ClaudeCodeAdapter implements IdeAdapter {
   }
 
   /**
-   * Generate /transpec:apply command
+   * Generate /transpec:preprocess command
    */
-  private async generateApplyCommand(commandsDir: string): Promise<void> {
-    const applyPath = path.join(commandsDir, 'apply.md');
+  private async generatePreprocessCommand(commandsDir: string): Promise<void> {
+    const preprocessPath = path.join(commandsDir, 'preprocess.md');
 
     const content = `---
-name: apply
-description: Apply transpec transformations to convert specs from source to target framework
+name: preprocess
+description: Run AI semantic analysis on IR entities (after convert)
 ---
 
-# /transpec:apply
+# /transpec:preprocess
 
-Apply transpec transformations to convert OpenSpec specs to Trellis format.
+Run AI-powered semantic analysis on the Intermediate Representation (IR) entities.
+This step extracts enhanced analysis including intent, key points, dependencies, and constraints.
 
 ## Usage
 
-Run this command when you want to apply the spec transformations.
+Run this command after \`transpec init\` and before \`transpec apply\`.
 
 ## Steps
 
@@ -156,19 +161,73 @@ Run this command when you want to apply the spec transformations.
    cat .transpec/config.yaml
    \`\`\`
 
-2. Review the IR (Intermediate Representation) in \`.transpec/ir/\`
+2. Review existing IR entities:
+   \`\`\`bash
+   ls -la .transpec/ir/
+   \`\`\`
+
+3. Run the preprocess command:
+   \`\`\`bash
+   transpec preprocess
+   \`\`\`
+
+4. Review the enhanced analysis results in the IR storage
+
+## Notes
+
+- Preprocess runs convert automatically if not yet done
+- Enhanced analysis includes intent, keyPoints, dependencies, constraints
+- Use \`--force\` to re-run even if already preprocessed
+- Use \`--skip-convert\` to skip convert step and only run analysis
+`;
+
+    await fs.writeFile(preprocessPath, content);
+    logger.debug('Generated preprocess.md', { path: preprocessPath });
+  }
+
+  /**
+   * Generate /transpec:apply command
+   */
+  private async generateApplyCommand(commandsDir: string): Promise<void> {
+    const applyPath = path.join(commandsDir, 'apply.md');
+
+    const content = `---
+name: apply
+description: Final transformation - convert IR to target framework (after preprocess)
+---
+
+# /transpec:apply
+
+Final transformation step - converts IR entities with enhanced analysis to target framework.
+
+## Usage
+
+Run this command AFTER \`/transpec:preprocess\`.
+
+## Steps
+
+1. Read the current transpec configuration:
+   \`\`\`bash
+   cat .transpec/config.yaml
+   \`\`\`
+
+2. Review the enhanced analysis in IR storage:
+   \`\`\`bash
+   ls -la .transpec/ir/
+   \`\`\`
 
 3. Run the apply command:
    \`\`\`bash
    transpec apply
    \`\`\`
 
-4. Verify the output in the target framework directory
+4. Verify the output in the target framework directory (e.g., \`.trellis/spec/\`)
 
 ## Notes
 
+- Apply runs Transform + Emit phases using enhanced analysis from preprocess
+- Use \`--force\` to re-run even if conversion was already done
 - Use \`transpec convert --dry-run\` to preview changes without applying
-- Use \`transpec validate\` to check for spec compliance issues
 `;
 
     await fs.writeFile(applyPath, content);

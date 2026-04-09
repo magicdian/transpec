@@ -2,6 +2,7 @@
  * transpec-preprocess command - AI-powered semantic analysis
  *
  * This command performs LLM analysis on RAW IR entities:
+ * 0. Run transpec convert (Parse phase) if needed
  * 1. Load entities from IR storage
  * 2. Load framework-specific preprocess skills
  * 3. Execute skills to extract enhanced analysis
@@ -13,11 +14,15 @@
 
 import chalk from 'chalk';
 import * as path from 'path';
+import * as fs from 'fs/promises';
 import { fileURLToPath } from 'url';
 import { SkillExecutor } from '../../core/skill/skill.js';
 import { SQLiteStorage } from '../../core/storage/sqlite.js';
 import { EnhancedAnalysis, ProjectSummary } from '../../core/ir/types.js';
 import { Logger, LogLevel, LogModules, getLogger } from '../../core/logging/index.js';
+import { frameworkRegistry } from '../../core/framework/index.js';
+import { ConversionEngine } from '../../core/engine/engine.js';
+import { parseYaml } from '../utils/yaml.js';
 
 const logger = getLogger(LogModules.CLI);
 
@@ -25,10 +30,20 @@ export interface PreprocessOptions {
   projectPath?: string;
   verbose?: boolean;
   force?: boolean;
+  skipConvert?: boolean;
+}
+
+interface Config {
+  project?: {
+    sourceFramework?: string;
+    targetFramework?: string;
+    mode?: string;
+  };
 }
 
 /**
  * Get the built-in skills directory
+ * Skill files are in .transpec/skills/ (copied to dist during build)
  */
 function getBuiltInSkillsDir(): string {
   const currentFile = fileURLToPath(import.meta.url);
@@ -37,10 +52,10 @@ function getBuiltInSkillsDir(): string {
   // - 1 level up = dist/cli/commands
   // - 2 levels up = dist/cli
   // - 3 levels up = dist
-  // - 4 levels up = package root
-  // Built-in skills are in src/core/skill/skills
+  // - 4 levels up = packages/cli (package root)
+  // Built-in skills are in .transpec/skills/
   const packageRoot = path.resolve(currentDir, '..', '..', '..', '..');
-  return path.join(packageRoot, 'src', 'core', 'skill', 'skills');
+  return path.join(packageRoot, '.transpec', 'skills');
 }
 
 export async function preprocessCommand(options: PreprocessOptions): Promise<void> {
@@ -56,6 +71,11 @@ export async function preprocessCommand(options: PreprocessOptions): Promise<voi
   console.log(chalk.gray(`Project: ${chalk.cyan(projectPath)}\n`));
 
   try {
+    // Step 0: Run convert if needed (Parse phase only)
+    if (!options.skipConvert) {
+      await runConvert(projectPath);
+    }
+
     // Step 1: Load IR storage
     console.log(chalk.bold('Step 1: Loading IR entities...'));
     const dbPath = path.join(projectPath, '.transpec', 'ir', 'conversion.db');
@@ -268,4 +288,64 @@ function extractGlobalKeyPoints(
   }
 
   return [...new Set(points)].slice(0, 10);
+}
+
+/**
+ * Run convert command internally (Parse phase only)
+ */
+async function runConvert(projectPath: string): Promise<void> {
+  console.log(chalk.bold('Step 0: Running conversion (Parse phase)...'));
+
+  // Load config
+  const configPath = path.join(projectPath, '.transpec', 'config.yaml');
+
+  try {
+    const configContent = await fs.readFile(configPath, 'utf-8');
+    const config: Config = parseYaml(configContent);
+
+    const sourceFramework = config.project?.sourceFramework;
+    const targetFramework = config.project?.targetFramework;
+
+    if (!sourceFramework || !targetFramework) {
+      console.log(chalk.yellow('  No config found, skipping convert step.\n'));
+      return;
+    }
+
+    // Get adapters
+    const sourceAdapter = frameworkRegistry.get(sourceFramework as any);
+    const targetAdapter = frameworkRegistry.get(targetFramework as any);
+
+    if (!sourceAdapter || !targetAdapter) {
+      console.log(chalk.yellow('  Invalid adapters in config, skipping convert.\n'));
+      return;
+    }
+
+    // Create IR storage
+    const irPath = path.join(projectPath, '.transpec', 'ir');
+    await fs.mkdir(irPath, { recursive: true });
+    const dbPath = path.join(irPath, 'conversion.db');
+
+    // Run conversion engine in on-demand mode (Parse only)
+    const engine = new ConversionEngine({
+      sourceFramework,
+      targetFramework,
+      projectPath,
+      outputPath: projectPath,
+      mode: 'on-demand',
+      dryRun: false,
+    }, dbPath);
+
+    await engine.initialize();
+    const result = await engine.run();
+
+    if (result.success) {
+      console.log(chalk.green(`  ✓ Convert completed (${result.entitiesProcessed} entities)\n`));
+    } else {
+      console.log(chalk.yellow(`  ! Convert completed with issues\n`));
+    }
+
+  } catch (error) {
+    // If no config or conversion fails, just skip
+    console.log(chalk.gray(`  Skipping convert: ${(error as Error).message}\n`));
+  }
 }

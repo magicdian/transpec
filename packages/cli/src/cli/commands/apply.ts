@@ -1,117 +1,69 @@
 /**
- * transpec-apply command - Run post-migration skills
+ * transpec-apply command - Final transformation
  *
- * This command is invoked by AI agents after transpec convert completes.
- * It triggers post-migration skills that analyze converted content
- * and generate framework-specific artifacts (e.g., Trellis specs).
+ * This command performs the final transformation using enhanced analysis:
+ * 1. Load entities with enhancedAnalysis from IR storage (after preprocess)
+ * 2. Run Transform + Emit phases
+ * 3. Output framework-specific artifacts
+ * 4. Update IRMetadata: aiPostProcessed = true
  *
- * Flow:
- * 1. Run transpec convert (if not already done)
- * 2. Load post-migration skills from .transpec/skills/
- * 3. Output skill instructions for the agent to execute
+ * User workflow:
+ *   Shell: transpec init
+ *   Agent IDE:
+ *     1. transpec preprocess   # auto-run convert + preprocess skills
+ *     2. transpec apply      # final transformation (Transform + Emit)
+ *
+ * Usage: transpec apply [--project-path <path>]
  */
 
 import chalk from 'chalk';
 import * as path from 'path';
 import * as fs from 'fs/promises';
-import { SkillLoader } from '../../core/skill/skill.js';
-import { Logger, LogLevel, getLogger } from '../../core/logging/index.js';
 import { fileURLToPath } from 'url';
+import { SQLiteStorage } from '../../core/storage/sqlite.js';
+import { ConversionEngine } from '../../core/engine/engine.js';
+import { SkillExecutor } from '../../core/skill/skill.js';
+import { Logger, LogLevel, getLogger } from '../../core/logging/index.js';
+import { parseYaml } from '../utils/yaml.js';
 
 const logger = getLogger('cli');
 
 /**
- * Find the package root by resolving from the main package entry point
- * This works whether CLI is run from source (npm link) or installed globally
+ * Get the built-in skills directory
+ * Skill files are in .transpec/skills/ (copied to dist during build)
  */
-function getPackageSkillsDir(): string {
-  // Get directory of current module
+function getBuiltInSkillsDir(): string {
   const currentFile = fileURLToPath(import.meta.url);
   const currentDir = path.dirname(currentFile);
-
-  // The skills should be at package root's .transpec/skills
   // From dist/cli/commands/apply.js:
-  // - 1 level up = dist/cli
-  // - 2 levels up = dist
-  // - 3 levels up = package root (where .transpec lives)
-  const packageRoot = path.resolve(currentDir, '..', '..', '..');
-
+  // - 1 level up = dist/cli/commands
+  // - 2 levels up = dist/cli
+  // - 3 levels up = dist
+  // - 4 levels up = packages/cli (package root)
+  // Built-in skills are in .transpec/skills/
+  const packageRoot = path.resolve(currentDir, '..', '..', '..', '..');
   return path.join(packageRoot, '.transpec', 'skills');
 }
 
-const PACKAGE_SKILLS_DIR = getPackageSkillsDir();
-
 /**
- * Copy skills from package to project if they don't exist
+ * Get the project's custom skills directory
  */
-async function ensureProjectSkills(projectPath: string): Promise<void> {
-  const projectSkillsDir = path.join(projectPath, '.transpec', 'skills');
-
-  // Check if package skills exist
-  try {
-    await fs.access(PACKAGE_SKILLS_DIR);
-  } catch {
-    // Package skills don't exist, skip
-    logger.debug('No package skills found', { path: PACKAGE_SKILLS_DIR });
-    return;
-  }
-
-  // Check if project skills already exist
-  try {
-    await fs.access(projectSkillsDir);
-    // Project skills exist, don't overwrite
-    logger.debug('Project skills already exist', { path: projectSkillsDir });
-    return;
-  } catch {
-    // Project skills don't exist, create and copy
-  }
-
-  // Create project skills directory
-  await fs.mkdir(projectSkillsDir, { recursive: true });
-  logger.debug('Created skills directory', { path: projectSkillsDir });
-
-  // Read skills from package
-  const skillDirs = await fs.readdir(PACKAGE_SKILLS_DIR);
-
-  for (const skillDir of skillDirs) {
-    const srcDir = path.join(PACKAGE_SKILLS_DIR, skillDir);
-    const destDir = path.join(projectSkillsDir, skillDir);
-
-    // Skip if not a directory
-    const stat = await fs.stat(srcDir);
-    if (!stat.isDirectory()) {
-      continue;
-    }
-
-    // Copy skill directory
-    await copyDirRecursive(srcDir, destDir);
-    logger.debug('Copied skill', { from: srcDir, to: destDir });
-  }
-}
-
-/**
- * Recursively copy directory
- */
-async function copyDirRecursive(src: string, dest: string): Promise<void> {
-  await fs.mkdir(dest, { recursive: true });
-  const entries = await fs.readdir(src, { withFileTypes: true });
-
-  for (const entry of entries) {
-    const srcPath = path.join(src, entry.name);
-    const destPath = path.join(dest, entry.name);
-
-    if (entry.isDirectory()) {
-      await copyDirRecursive(srcPath, destPath);
-    } else {
-      await fs.copyFile(srcPath, destPath);
-    }
-  }
+function getProjectSkillsDir(projectPath: string): string {
+  return path.join(projectPath, '.transpec', 'skills');
 }
 
 interface ApplyOptions {
   projectPath?: string;
-  forceConvert?: boolean;
+  force?: boolean;
   verbose?: boolean;
+}
+
+interface Config {
+  project?: {
+    sourceFramework?: string;
+    targetFramework?: string;
+    mode?: string;
+  };
 }
 
 export async function applyCommand(options: ApplyOptions) {
@@ -125,182 +77,183 @@ export async function applyCommand(options: ApplyOptions) {
   console.log(chalk.blue(`\n=== Transpec Apply ===\n`));
   console.log(`Project: ${chalk.cyan(projectPath)}\n`);
 
-  // Step 1: Check if .transpec/config.yaml exists
+  // Step 1: Load config to get framework info
+  console.log(chalk.bold('Step 1: Loading project configuration...'));
   const configPath = path.join(projectPath, '.transpec', 'config.yaml');
-  let needsConversion = true;
+
+  let sourceFramework = 'openspec';
+  let targetFramework = 'trellis';
 
   try {
     const configContent = await fs.readFile(configPath, 'utf-8');
-    const lastConversion = configContent.match(/lastConversion:\s*(.+)/)?.[1];
+    const config: Config = parseYaml(configContent);
 
-    if (lastConversion && !options.forceConvert) {
-      console.log(`Last conversion: ${chalk.gray(lastConversion)}`);
-      console.log(`Use ${chalk.yellow('--force')} to re-run conversion\n`);
-      needsConversion = false;
+    if (config.project?.sourceFramework) {
+      sourceFramework = config.project.sourceFramework;
     }
+    if (config.project?.targetFramework) {
+      targetFramework = config.project.targetFramework;
+    }
+
+    console.log(chalk.gray(`  Source: ${sourceFramework} → Target: ${targetFramework}\n`));
   } catch {
-    console.log(chalk.yellow('No .transpec/config.yaml found. Running initial conversion...\n'));
-    needsConversion = true;
+    console.log(chalk.yellow('  No config found, using defaults (openspec → trellis)\n'));
   }
 
-  // Step 2: Run conversion if needed
-  if (needsConversion) {
-    console.log(chalk.bold('Step 1: Running conversion...\n'));
+  // Step 2: Check if IR storage exists (preprocess must have run)
+  console.log(chalk.bold('Step 2: Checking IR storage...'));
+  const dbPath = path.join(projectPath, '.transpec', 'ir', 'conversion.db');
 
-    // Auto-detect frameworks from project
-    const { frameworkRegistry } = await import('../../core/framework/index.js');
-
-    let sourceFramework = 'openspec';
-    let targetFramework = 'trellis';
-
-    // Try to detect source framework
-    const openspecAdapter = frameworkRegistry.get('openspec');
-    const trellisAdapter = frameworkRegistry.get('trellis');
-
-    if (openspecAdapter && await openspecAdapter.detect(projectPath)) {
-      sourceFramework = 'openspec';
-      console.log(`Detected source framework: ${chalk.cyan(sourceFramework)}`);
-    }
-
-    if (trellisAdapter && await trellisAdapter.detect(projectPath)) {
-      // If both detected, prefer trellis as target (migration scenario)
-      targetFramework = 'trellis';
-      console.log(`Detected target framework: ${chalk.cyan(targetFramework)}`);
-    }
-
-    // Import convert logic inline to avoid circular dependency
-    const { convertCommand } = await import('./convert.js');
-    await convertCommand({
-      projectPath,
-      source: sourceFramework,
-      target: targetFramework,
-      dryRun: false,
-      verbose: options.verbose,
-    });
-  } else {
-    console.log(chalk.bold('Step 1: Conversion skipped (use --force to re-run)\n'));
-  }
-
-  // Step 3: Ensure Trellis spec directory structure exists
-  console.log(chalk.bold('Step 2: Setting up Trellis spec structure...\n'));
-
-  const specDir = path.join(projectPath, '.trellis', 'spec');
-  const backendDir = path.join(specDir, 'backend');
-  const frontendDir = path.join(specDir, 'frontend');
-  const guidesDir = path.join(specDir, 'guides');
-
-  // Create directories if they don't exist
-  for (const dir of [specDir, backendDir, frontendDir, guidesDir]) {
-    try {
-      await fs.mkdir(dir, { recursive: true });
-    } catch {
-      // Ignore
-    }
-  }
-
-  // Create index files if they don't exist
-  const indexFiles = [
-    { path: path.join(backendDir, 'index.md'), content: '# Backend Development Guidelines\n\n> To be filled based on project analysis.\n' },
-    { path: path.join(frontendDir, 'index.md'), content: '# Frontend Development Guidelines\n\n> To be filled based on project analysis.\n' },
-    { path: path.join(guidesDir, 'index.md'), content: '# Thinking Guides\n\n> Guides for cross-layer and code architecture decisions.\n' },
-  ];
-
-  for (const { path: filePath, content } of indexFiles) {
-    try {
-      await fs.access(filePath);
-      console.log(`  ${chalk.gray('Exists:')} ${path.relative(projectPath, filePath)}`);
-    } catch {
-      await fs.writeFile(filePath, content);
-      console.log(`  ${chalk.green('Created:')} ${path.relative(projectPath, filePath)}`);
-    }
-  }
-
-  // Ensure post-migration skills are available
-  console.log(chalk.bold('Step 3: Setting up post-migration skills...\n'));
-  await ensureProjectSkills(projectPath);
-
-  const projectSkillsDir = path.join(projectPath, '.transpec', 'skills');
   try {
-    const skillDirs = await fs.readdir(projectSkillsDir);
-    let skillsCount = 0;
-    for (const d of skillDirs) {
-      const stat = await fs.stat(path.join(projectSkillsDir, d));
-      if (stat.isDirectory()) {
-        skillsCount++;
-      }
-    }
-
-    if (skillsCount > 0) {
-      console.log(`  ${chalk.green('Skills installed:')} ${skillsCount} skill(s) in .transpec/skills/`);
-    } else {
-      console.log(`  ${chalk.gray('No skills found in package')}`);
-    }
+    await fs.access(dbPath);
   } catch {
-    console.log(`  ${chalk.gray('No skills directory found')}`);
-  }
-  console.log();
-
-  // Step 4: Load and display post-migration skills
-  console.log(chalk.bold('Step 4: Checking post-migration skills...\n'));
-
-  const skillsDir = path.join(projectPath, '.transpec', 'skills');
-  const loader = new SkillLoader(skillsDir);
-  await loader.loadAll();
-
-  const postMigrationSkills = loader.getByTrigger('post-migration');
-
-  if (postMigrationSkills.length === 0) {
-    console.log(chalk.gray('No post-migration skills found.\n'));
+    console.log(chalk.red('✗ IR storage not found. Run "transpec preprocess" first.\n'));
     return;
   }
 
-  console.log(`Found ${chalk.cyan(postMigrationSkills.length)} post-migration skill(s):\n`);
+  const storage = new SQLiteStorage(dbPath);
+  const entities = storage.loadAllEntities();
+  const relations = storage.loadRelations();
 
-  for (const skill of postMigrationSkills) {
-    console.log(`  ${chalk.green('●')} ${chalk.bold(skill.name)}`);
-    console.log(`    ${chalk.gray(skill.description)}`);
-    if (skill.model) {
-      console.log(`    Model: ${chalk.gray(skill.model)}`);
+  if (entities.length === 0) {
+    console.log(chalk.red('✗ No entities found in IR storage. Run "transpec preprocess" first.\n'));
+    storage.close();
+    return;
+  }
+
+  console.log(chalk.gray(`  Loaded ${entities.length} entities, ${relations.length} relations\n`));
+
+  // Step 3: Check if preprocess has run (enhancedAnalysis present)
+  console.log(chalk.bold('Step 3: Checking preprocess status...'));
+  const preprocessDone = entities.some(e => e.metadata?.enhancedAnalysis);
+
+  if (!preprocessDone && !options.force) {
+    console.log(chalk.yellow('  ⚠ Enhanced analysis not found. Use --force to proceed anyway.\n'));
+    storage.close();
+    return;
+  }
+
+  if (preprocessDone) {
+    console.log(chalk.gray('  ✓ Enhanced analysis found\n'));
+  } else {
+    console.log(chalk.gray('  ⚠ Enhanced analysis not found, proceeding without it\n'));
+  }
+
+  // Step 4: Run Transform + Emit phases
+  console.log(chalk.bold('Step 4: Running final transformation (Transform + Emit)...\n'));
+
+  const outputPath = projectPath;
+  const engine = new ConversionEngine({
+    sourceFramework,
+    targetFramework,
+    projectPath,
+    outputPath,
+    mode: 'on-demand',
+    dryRun: false,
+  }, dbPath);
+
+  try {
+    await engine.initialize();
+    const result = await engine.runTransformEmit();
+
+    if (result.success) {
+      console.log(chalk.green(`  ✓ Transformation completed (${result.entitiesProcessed} entities)\n`));
+    } else {
+      console.log(chalk.yellow(`  ⚠ Transformation completed with issues\n`));
+      for (const issue of result.issues) {
+        console.log(chalk.gray(`    - ${issue.type}: ${issue.message}`));
+      }
+      console.log();
     }
+  } catch (error) {
+    console.log(chalk.red(`✗ Transformation failed: ${(error as Error).message}\n`));
+    storage.close();
+    throw error;
+  }
+
+  // Step 5: Guide agent to execute post-migration skills (only for Trellis target)
+  // Trellis-specific: generate-trellis-specs generates spec/backend/, spec/frontend/, spec/guides/
+  if (targetFramework === 'trellis') {
+    console.log(chalk.bold('Step 5: Checking Trellis post-migration skills...'));
+
+    // Combine built-in skills and project skills directories
+    const builtInSkillsDir = getBuiltInSkillsDir();
+    const projectSkillsDir = getProjectSkillsDir(projectPath);
+
+    let postMigrationSkills: Awaited<ReturnType<SkillExecutor['getByTrigger']>> = [];
+
+    try {
+      // Try loading from project skills directory first
+      const executor = new SkillExecutor(projectSkillsDir);
+      await executor.initialize();
+      postMigrationSkills = executor.getByTrigger('post-migration');
+
+      // Also load built-in skills and merge
+      if (builtInSkillsDir !== projectSkillsDir) {
+        const builtInExecutor = new SkillExecutor(builtInSkillsDir);
+        await builtInExecutor.initialize();
+        postMigrationSkills = [...postMigrationSkills, ...builtInExecutor.getByTrigger('post-migration')];
+      }
+
+      if (postMigrationSkills.length > 0) {
+        console.log(chalk.gray(`  Found ${postMigrationSkills.length} post-migration skill(s) for Trellis:`));
+        for (const skill of postMigrationSkills) {
+          console.log(chalk.cyan(`    - ${skill.name}`));
+          console.log(chalk.gray(`      ${skill.description}`));
+        }
+        console.log();
+      } else {
+        console.log(chalk.gray('  No Trellis post-migration skills found\n'));
+      }
+    } catch (error) {
+      console.log(chalk.yellow(`  Warning: Could not load skills: ${(error as Error).message}\n`));
+    }
+  }
+
+  // Step 6: Update config with lastApply timestamp
+  console.log(chalk.bold('Step 6: Updating project configuration...'));
+  try {
+    const configContent = await fs.readFile(configPath, 'utf-8');
+    const timestamp = new Date().toISOString();
+    const updatedContent = configContent.replace(
+      /lastConversion:\s*.+/,
+      `lastConversion: ${timestamp}`
+    ).replace(
+      /lastApply:\s*.+/,
+      `lastApply: ${timestamp}`
+    );
+
+    // Add lastApply if not present
+    let finalContent = updatedContent;
+    if (!updatedContent.includes('lastApply:')) {
+      finalContent = updatedContent + `\nlastApply: ${timestamp}`;
+    }
+
+    await fs.writeFile(configPath, finalContent);
+    console.log(chalk.gray(`  Updated config with lastApply timestamp\n`));
+  } catch {
+    // Ignore config update errors
+  }
+
+  // Step 7: Summary
+  console.log(chalk.bold('Summary:\n'));
+  console.log(`  Project: ${chalk.cyan(projectPath)}`);
+  console.log(`  Entities transformed: ${chalk.green(entities.length)}`);
+  console.log(`  Output: ${chalk.cyan(path.join(projectPath, '.trellis'))}`);
+  console.log();
+
+  // Guide AI agent to execute Trellis post-migration skills (only for Trellis target)
+  if (targetFramework === 'trellis') {
+    console.log(chalk.bold('Next Steps:\n'));
+    console.log(chalk.cyan('  To generate Trellis development specs (spec/backend/, spec/frontend/, spec/guides/):'));
+    console.log(chalk.gray('    Read .transpec/skills/generate-trellis-specs/SKILL.md and follow the instructions'));
     console.log();
   }
 
-  // Step 4: Output skill instructions for the agent
-  console.log(chalk.bold('Skill Instructions for Agent:\n'));
-  console.log('```');
-  console.log(`# Execute post-migration skills`);
-
-  for (const skill of postMigrationSkills) {
-    const skillFile = path.join(skillsDir, skill.name, 'SKILL.md');
-    console.log(`\n## ${skill.name}`);
-    console.log(`Read: ${skillFile}`);
-    console.log(`Trigger: ${skill.trigger}`);
-    console.log(`Model: ${skill.model || 'agent default'}`);
-
-    // Output skill content summary
-    const skillContent = skill.content.slice(0, 500);
-    console.log(`\nPurpose: ${skillContent.split('\n')[0]}`);
-  }
-
-  console.log('```\n');
-
-  // Step 5: Summary
-  console.log(chalk.bold('Summary:\n'));
-  console.log(`  Project: ${chalk.cyan(projectPath)}`);
-  console.log(`  Conversion: ${needsConversion ? chalk.green('Run') : chalk.yellow('Skipped')}`);
-  console.log(`  Skills to execute: ${chalk.cyan(postMigrationSkills.length)}`);
-  console.log();
-
-  console.log(chalk.bold('To execute skills, the Agent should:\n'));
-  console.log(`  1. Read each skill's SKILL.md file`);
-  console.log(`  2. Execute the skill workflow using AI`);
-  console.log(`  3. Present results to user for confirmation`);
-  console.log(`  4. Write approved files to target locations`);
-  console.log();
-
   logger.info('Apply command completed', {
     projectPath,
-    conversionRun: needsConversion,
-    skillsFound: postMigrationSkills.length,
+    entitiesProcessed: entities.length,
   });
+
+  storage.close();
 }
