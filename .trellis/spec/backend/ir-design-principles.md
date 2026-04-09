@@ -312,6 +312,103 @@ AI-assisted transformation:
 
 ---
 
+## Large Project Processing: B+C Hybrid Strategy
+
+For large projects that exceed model context limits, pre-process uses a **relation-driven batch processing** strategy.
+
+### Why B+C Over Other Approaches
+
+| Strategy | Information Loss | Complexity |
+|----------|----------------|------------|
+| MapReduce only | High - first layer compression loses detail | Medium |
+| Relation-driven only | Low - relations preserved in order | High |
+| Sliding window | Medium - iterative accumulation | Low |
+| **B+C Hybrid** | **Lowest** - relation-first + bounded summaries | **Medium** |
+
+### The B+C Strategy
+
+```
+批次 1: 处理无依赖的 entities (leaf nodes) → 生成 summaries
+批次 2: 处理依赖批次1的 entities + summaries 作为上下文
+批次 3: 处理依赖批次2的 entities + 所有前序 summaries
+...
+最终: 合并所有批次结果
+```
+
+### Implementation Pattern
+
+```typescript
+interface PreprocessBatch {
+  batchId: number;
+  entityIds: string[];
+  dependencies: string[];      // 前序批次的 entity IDs
+  contextSummary?: string;       // 前序批次的摘要
+  results: EnhancedAnalysis[];
+}
+
+interface PreprocessState {
+  batches: PreprocessBatch[];
+  entityResults: Map<string, EnhancedAnalysis>;
+  globalSummary: ProjectSummary;
+}
+
+// Algorithm:
+// 1. Build dependency graph from CoreRelations
+// 2. Topological sort to determine processing order
+// 3. Group into batches by context size limit
+// 4. Process each batch with preceding summaries as context
+// 5. Merge results
+```
+
+### Context Size Management
+
+Each batch must fit within model's context limit:
+- Reserve space for: preceding summaries + current entities + analysis prompt
+- If single entity exceeds limit: process it alone with minimal context
+- Track context usage across batches to avoid overflow
+
+### Relation Preservation
+
+```typescript
+// Relations guide batch ordering, not discarded
+const relationTypes = ['implements', 'depends_on', 'blocks', 'related_to'];
+
+// Entities are grouped by their dependency depth
+function computeBatchDepth(entityId: string, relations: CoreRelation[]): number {
+  const deps = relations.filter(r => r.targetId === entityId);
+  if (deps.length === 0) return 0;
+  return 1 + max(deps.map(d => computeBatchDepth(d.sourceId, relations)));
+}
+```
+
+---
+
+## TODO: Multi-Framework Merge
+
+**Not yet implemented** - Future consideration for merging IR from multiple independent frameworks.
+
+### Use Case
+- Framework A and Framework B developed independently
+- Need to merge IR_A + IR_B → target Framework C
+
+### Challenges
+- Duplicate entity detection (fuzzy dedupe by name/content/relation similarity)
+- Conflict resolution (e.g., A says PostgreSQL, B says MongoDB)
+- Dependency alignment across frameworks
+
+### Potential Approach
+```
+IR_A ∪ IR_B → IR_Merged (union + dedupe)
+    ↓
+AI Conflict Resolution
+    ↓
+IR_Resolved (unified)
+    ↓
+transpec-apply → Target C
+```
+
+---
+
 ## Adding New Frameworks
 
 **Never modify IR schema**. To add a new framework:
