@@ -7,3 +7,9 @@
 [submodule "SpecFrameworks/Trellis"]
 	path = SpecFrameworks/Trellis
 	url = https://github.com/mindfold-ai/trellis
+[submodule "SpecFrameworks/spec-kit"]
+	path = SpecFrameworks/spec-kit
+	url = https://github.com/github/spec-kit
+[submodule "SpecFrameworks/superpowers"]
+	path = SpecFrameworks/superpowers
+	url = https://github.com/obra/superpowers
