@@ -262,3 +262,48 @@ Extended transpec CLI to support multiple AI coding IDEs. Implemented CursorAdap
 ### Next Steps
 
 - None - task complete
+
+
+## Session 9: IR Schema 2.0 B+C Batch Processing Implementation
+
+**Date**: 2026-04-09
+**Task**: IR Schema 2.0 B+C Batch Processing Implementation
+
+### Summary
+
+实现 IR Schema 2.0 规范变更，包括 B+C 混合批处理策略
+
+## 完成内容
+- 添加 PreprocessBatch/PreprocessState 接口到 types.ts
+- 创建 batch-processor.ts 实现依赖深度拓扑排序批处理
+- 集成批处理器到 engine.ts runAnalyzePhase
+- 添加模拟 enhanced analysis 提取方法
+- 版本更新 2604.9.4 → 2604.9.5
+
+## 关键文件
+- src/core/ir/types.ts - 新增批处理接口
+- src/core/engine/batch-processor.ts - B+C 算法实现
+- src/core/engine/engine.ts - 集成批处理器
+
+### Main Changes
+
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `175c5b7` | (see git log) |
+| `986ea8b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

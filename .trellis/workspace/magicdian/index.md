@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 8
+- **Total Sessions**: 9
 - **Last Active**: 2026-04-09
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~264 | Active |
+| `journal-1.md` | ~309 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits |
 |---|------|-------|---------|
+| 9 | 2026-04-09 | IR Schema 2.0 B+C Batch Processing Implementation | `175c5b7`, `986ea8b` |
 | 8 | 2026-04-09 | IR架构评审与规范更新 | `3efd071`, `2324224`, `d0e5016` |
 | 7 | 2026-04-09 | 填充 Transpec 开发规范 | `d40ddab` |
 | 6 | 2026-04-09 | Add IDE adapters for Cursor, Codex, and OpenCode | `e924f3b` |
