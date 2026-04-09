@@ -8,14 +8,16 @@ import { detectCommand } from './commands/detect.js';
 import { initCommand } from './commands/init.js';
 import { convertCommand } from './commands/convert.js';
 import { applyCommand } from './commands/apply.js';
+import { versionCommand } from './commands/version.js';
 import { Logger, LogLevel } from '../core/logging/index.js';
+import { getVersionString } from '../core/version.js';
 
 const program = new Command();
 
 program
   .name('transpec')
   .description('Universal spec conversion tool - Convert between OpenSpec, Trellis, and other frameworks')
-  .version('0.1.0');
+  .version(getVersionString() || '0.0.0');
 
 // Global options
 program
@@ -64,6 +66,12 @@ program
   .option('-f, --force', 'Force re-run conversion even if already done')
   .option('-v, --verbose', 'Enable verbose logging')
   .action(applyCommand);
+
+program
+  .command('version')
+  .description('Show or bump version')
+  .option('-b, --bump', 'Bump version to next build')
+  .action(versionCommand);
 
 program
   .command('validate')
