@@ -100,3 +100,35 @@ Implemented 6-step interactive TUI for transpec init command with IDE selection,
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: Fix transpec apply missing skills
+
+**Date**: 2026-04-09
+**Task**: Fix transpec apply missing skills
+
+### Summary
+
+Fixed bug where transpec apply couldn't find post-migration skills. The generate-trellis-specs skill exists at package level but was never copied to project's .transpec/skills/ directory. Added ensureProjectSkills() function to copy skills from CLI package during apply command.
+
+### Main Changes
+
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b7d7f63` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
