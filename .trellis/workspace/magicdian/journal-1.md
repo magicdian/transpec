@@ -164,3 +164,35 @@ Implemented YYMM.dd.BuildNumber version format with CLI commands and finish-work
 ### Next Steps
 
 - None - task complete
+
+
+## Session 6: Add IDE adapters for Cursor, Codex, and OpenCode
+
+**Date**: 2026-04-09
+**Task**: Add IDE adapters for Cursor, Codex, and OpenCode
+
+### Summary
+
+Extended transpec CLI to support multiple AI coding IDEs. Implemented CursorAdapter, CodexAdapter, and OpenCodeAdapter that generate appropriate skill files for each IDE's command structure. Updated init command to allow selecting multiple IDEs during configuration.
+
+### Main Changes
+
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e924f3b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
