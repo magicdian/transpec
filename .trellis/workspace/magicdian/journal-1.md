@@ -352,3 +352,33 @@ Extended transpec CLI to support multiple AI coding IDEs. Implemented CursorAdap
 ### Next Steps
 
 - None - task complete
+
+
+## Session 11: Bug分析: Trellis spec目录未生成
+
+**Date**: 2026-04-10
+**Task**: Bug分析: Trellis spec目录未生成
+
+### Summary
+
+分析 transpec apply 转换 Trellis 时未生成 spec/backend/frontend/guides 目录的问题。发现根本原因：OpenSpec spec（功能规范）与 Trellis spec/（开发指南）语义不同，transpec init 的 codeSpec 配置项存储但未使用。已更新 ir-design-principles.md 添加语义差异说明，更新 trellis.ts 添加注释说明 spec/ 目录需单独生成。
+
+### Main Changes
+
+
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 10
+- **Total Sessions**: 11
 - **Last Active**: 2026-04-10
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~354 | Active |
+| `journal-1.md` | ~384 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits |
 |---|------|-------|---------|
+| 11 | 2026-04-10 | Bug分析: Trellis spec目录未生成 | - |
 | 10 | 2026-04-10 | transpec-preprocess 命令和 Skill 系统实现 | `7917951`, `7917951` |
 | 9 | 2026-04-09 | IR Schema 2.0 B+C Batch Processing Implementation | `175c5b7`, `986ea8b` |
 | 8 | 2026-04-09 | IR架构评审与规范更新 | `3efd071`, `2324224`, `d0e5016` |
