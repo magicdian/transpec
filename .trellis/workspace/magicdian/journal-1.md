@@ -228,3 +228,37 @@ Extended transpec CLI to support multiple AI coding IDEs. Implemented CursorAdap
 ### Next Steps
 
 - None - task complete
+
+
+## Session 8: IR架构评审与规范更新
+
+**Date**: 2026-04-09
+**Task**: IR架构评审与规范更新
+
+### Summary
+
+完成IR架构评审。决策：(1)扩展IR schema支持EnhancedAnalysis和projectSummary；(2)废弃aiAnalyzed改为aiPreProcessed/aiPostProcessed；(3)确定B+C混合策略处理大型项目；(4)记录Multi-framework merge为TODO。代码重构和更新待后续进行。
+
+### Main Changes
+
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3efd071` | (see git log) |
+| `2324224` | (see git log) |
+| `d0e5016` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
