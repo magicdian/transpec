@@ -8,6 +8,8 @@
 
 Transpec's core is a **stable ABI IR** inspired by LLVM IR. The IR schema is intentionally minimal and never changes when adding new frameworks. Framework-specific concepts are stored as strings, not schema additions.
 
+**Schema Version**: Current version is `2.0.0` - includes enhanced analysis support.
+
 ---
 
 ## Core Design Philosophy
@@ -18,6 +20,7 @@ Transpec's core is a **stable ABI IR** inspired by LLVM IR. The IR schema is int
 | **Framework-agnostic** | No framework-specific concepts in core types |
 | **Extensible metadata** | Framework-specific data stored as JSON blobs |
 | **String-typed relations** | `relationType` is framework-defined (e.g., "implements", "depends_on") |
+| **Dual-layer analysis** | RAW content + Enhanced analysis for semantic preservation |
 
 ---
 
@@ -48,12 +51,28 @@ export interface CoreEntity {
   name: string;
   coreType: CoreType;           // Stable ABI
   extendedType: string;         // Framework-specific: 'task', 'spec', 'change', 'proposal'
-  content: string;              // Full text content
-  metadata: Record<string, unknown>;  // Framework-specific data as JSON
+  content: string;              // Full text content - RAW, never parsed
+  metadata: Record<string, unknown>;  // Framework-specific + Enhanced data
   sourceFramework: string;      // e.g., 'openspec', 'trellis'
   sourcePath: string;           // Original file path
-  createdAt: string;           // ISO timestamp
-  updatedAt: string;           // ISO timestamp
+  createdAt: string;            // ISO timestamp
+  updatedAt: string;            // ISO timestamp
+}
+```
+
+### Enhanced Analysis
+
+Each entity can store framework-agnostic semantic analysis in `metadata.enhancedAnalysis`:
+
+```typescript
+export interface EnhancedAnalysis {
+  intent: string;              // 设计意图
+  keyPoints: string[];         // 关键要点
+  dependencies: string[];       // 依赖关系
+  constraints: string[];        // 约束条件
+  requirement?: string[];      // 需求定义 (通用类型)
+  design?: string[];            // 设计决策 (通用类型)
+  implementNote?: string[];     // 实现备注 (通用类型)
 }
 ```
 
@@ -65,7 +84,8 @@ export interface CoreEntity {
 | `name` | Human-readable name | Extracted from file/directory name |
 | `coreType` | Maps to stable type | Only `DOCUMENT` or `WORKFLOW` |
 | `extendedType` | Framework-specific type | Stored as string for flexibility |
-| `content` | Full original content | Never parsed, stored as-is |
+| `content` | Full original content | Never parsed, stored as-is (RAW) |
+| `metadata.enhancedAnalysis` | Framework-agnostic analysis | requirement, design, implement_note |
 | `metadata` | Framework-specific data | JSON blob - schema-free |
 | `sourceFramework` | Origin framework | For traceability |
 | `sourcePath` | Original file location | For debugging and relinking |
@@ -97,6 +117,12 @@ Different frameworks use different relationship semantics:
 
 **By storing as string**, we avoid schema proliferation. The string is framework-specific but the *structure* (source → relation → target) is universal.
 
+### Transform Strategy
+
+During Transform phase:
+- **Mappable relations**: Convert to target framework semantics (e.g., `implements` → `blocks`)
+- **Unmappable relations**: Discard, but post-process skill extracts key info as comments in target docs
+
 ---
 
 ## IRDocument
@@ -113,7 +139,47 @@ export interface IRDocument {
 }
 ```
 
-**`version` field** ensures future schema evolution doesn't break existing conversions.
+---
+
+## IRMetadata
+
+```typescript
+export interface IRMetadata {
+  convertedAt: string;
+  conversionMode: 'sampling' | 'full' | 'on-demand';
+
+  // AI processing status
+  aiPreProcessed: boolean;     // LLM pre-process completed (transpec-preprocess)
+  aiPostProcessed: boolean;     // AI post-process completed (transpec-apply)
+
+  issues: ValidationIssue[];
+
+  // Pre-process results
+  preprocessedAt?: string;
+  preprocessedBy?: string;
+  projectSummary?: ProjectSummary;
+}
+```
+
+### Project Summary
+
+```typescript
+export interface ProjectSummary {
+  overallArchitecture: string;
+  keyRequirements: string[];
+  designDecisions: string[];
+  developmentGuidelines: string;
+}
+```
+
+### AI Processing States
+
+| State | Description | Command |
+|------|-------------|---------|
+| `aiPreProcessed = false` | Raw parse only | `transpec parse` |
+| `aiPreProcessed = true` | Parse + LLM analysis done | `transpec-preprocess` |
+| `aiPostProcessed = false` | Pre-processed, awaiting apply | After preprocess |
+| `aiPostProcessed = true` | Full pipeline complete | `transpec-apply` |
 
 ---
 
@@ -143,18 +209,20 @@ entity.metadata = {
 };
 ```
 
-### Metadata Extraction
+### Enhanced Analysis
 
-When parsing, metadata is extracted but **content is preserved**:
+Framework-agnostic semantic analysis goes in `metadata.enhancedAnalysis`:
 
 ```typescript
-// GOOD - content preserved, metadata extracted
-const entity = await adapter.parseFile(filePath);
-entity.metadata.extractedFields = parseYAML(content);
-
-// BAD - content modified
-const parsed = parseYAML(content);
-entity.content = stringify(parsed); // Lost original format!
+entity.metadata.enhancedAnalysis = {
+  intent: "用户需要一个任务管理系统的核心功能",
+  keyPoints: ["看板视图", "拖拽排序", "多人协作"],
+  dependencies: ["需要数据库存储", "需要用户认证"],
+  constraints: ["不能依赖外部服务", "必须支持离线"],
+  requirement: ["用户可以创建任务", "用户可以分配任务"],
+  design: ["使用看板组件", "数据存储在SQLite"],
+  implementNote: ["先实现核心CRUD", "后续添加拖拽功能"]
+};
 ```
 
 ---
@@ -215,6 +283,35 @@ Every relation must have:
 
 ---
 
+## Workflow: Parse → Pre-process → Apply
+
+### Phase 1: Parse (transpec parse)
+
+Mechanical conversion only:
+1. Source adapter parses files → CoreEntity
+2. Content preserved as-is (RAW)
+3. `aiPreProcessed = false`, `aiPostProcessed = false`
+
+### Phase 2: Pre-process (transpec-preprocess)
+
+LLM analysis on RAW content:
+1. Framework-specific skills analyze source files
+2. Extract: intent, keyPoints, dependencies, constraints
+3. Map to common types: requirement, design, implement_note
+4. Generate projectSummary
+5. `aiPreProcessed = true`, `aiPostProcessed = false`
+
+### Phase 3: Apply (transpec-apply)
+
+AI-assisted transformation:
+1. Use enhancedAnalysis as context
+2. Map mappable relations
+3. Discard unmappable relations, extract key info to comments
+4. Emit to target framework format
+5. `aiPostProcessed = true`
+
+---
+
 ## Adding New Frameworks
 
 **Never modify IR schema**. To add a new framework:
@@ -222,7 +319,8 @@ Every relation must have:
 1. Create new adapter in `src/core/framework/adapters/`
 2. Implement `FrameworkAdapter` interface
 3. Define `extendedType` mappings in adapter
-4. Store framework-specific data in `metadata`
+4. Create framework-specific pre-process skill
+5. Skill outputs to common format: requirement, design, implement_note
 
 Example - adding spec-kit support:
 
@@ -241,6 +339,24 @@ export class SpeckitAdapter extends BaseFrameworkAdapter {
 }
 ```
 
+### Pre-process Skill Template
+
+```markdown
+## Framework-specific analysis (e.g., spec-kit)
+
+Analyze the following content and extract:
+
+1. **Intent** - What is this trying to achieve?
+2. **Key Points** - Main points of this content
+3. **Dependencies** - What does this depend on?
+4. **Constraints** - What limitations exist?
+5. **Requirements** - What must be implemented? (common type)
+6. **Design** - What design decisions were made? (common type)
+7. **Implement Notes** - Implementation hints? (common type)
+
+Output in JSON format matching EnhancedAnalysis interface.
+```
+
 ---
 
 ## Common Mistakes
@@ -251,7 +367,7 @@ export class SpeckitAdapter extends BaseFrameworkAdapter {
 // BAD - loses original content/formatting
 entity.content = JSON.stringify(parseJSON(content));
 
-// GOOD - preserves original, extracts for metadata
+// GOOD - preserves original, metadata contains parsed data
 entity.content = content;
 entity.metadata.parsed = parseJSON(content);
 ```
@@ -285,6 +401,21 @@ entity.content = originalMarkdownContent;
 entity.metadata.tasks = [...];
 ```
 
+### 4. Skipping enhanced analysis
+
+```typescript
+// BAD - just storing RAW content
+entity.content = content; // Done
+
+// GOOD - also extract semantic meaning
+entity.content = content;
+entity.metadata.enhancedAnalysis = {
+  intent: extractIntent(content),
+  requirement: extractRequirements(content),
+  // ...
+};
+```
+
 ---
 
 ## References
@@ -292,3 +423,4 @@ entity.metadata.tasks = [...];
 - IR types: `packages/cli/src/core/ir/types.ts`
 - Trellis adapter: `packages/cli/src/core/framework/adapters/trellis.ts`
 - OpenSpec adapter: `packages/cli/src/core/framework/adapters/openspec.ts`
+- Conversion engine: `packages/cli/src/core/engine/engine.ts`

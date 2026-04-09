@@ -14,6 +14,9 @@ export enum CoreType {
 
 /**
  * CoreEntity - All frameworks use this common format
+ *
+ * Enhanced Analysis: Each entity can store framework-agnostic semantic analysis
+ * in metadata.enhancedAnalysis with types: requirement, design, implement_note.
  */
 export interface CoreEntity {
   id: string;
@@ -26,6 +29,19 @@ export interface CoreEntity {
   sourcePath: string;
   createdAt: string;
   updatedAt: string;
+}
+
+/**
+ * Enhanced analysis stored in CoreEntity.metadata
+ */
+export interface EnhancedAnalysis {
+  intent: string;              // 设计意图
+  keyPoints: string[];         // 关键要点
+  dependencies: string[];       // 依赖关系
+  constraints: string[];        // 约束条件
+  requirement?: string[];      // 需求定义 (通用类型)
+  design?: string[];            // 设计决策 (通用类型)
+  implementNote?: string[];     // 实现备注 (通用类型)
 }
 
 /**
@@ -55,12 +71,31 @@ export interface IRDocument {
 
 /**
  * Metadata about the conversion
+ *
+ * aiPreProcessed: LLM pre-process completed (transpec-preprocess)
+ * aiPostProcessed: AI post-process completed (transpec-apply)
  */
 export interface IRMetadata {
   convertedAt: string;
   conversionMode: 'sampling' | 'full' | 'on-demand';
-  aiAnalyzed: boolean;
+  aiPreProcessed: boolean;
+  aiPostProcessed: boolean;
   issues: ValidationIssue[];
+
+  // Pre-process results
+  preprocessedAt?: string;
+  preprocessedBy?: string;
+  projectSummary?: ProjectSummary;
+}
+
+/**
+ * Project-level summary extracted during pre-process
+ */
+export interface ProjectSummary {
+  overallArchitecture: string;
+  keyRequirements: string[];
+  designDecisions: string[];
+  developmentGuidelines: string;
 }
 
 /**
