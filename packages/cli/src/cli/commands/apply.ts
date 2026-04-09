@@ -16,8 +16,97 @@ import * as path from 'path';
 import * as fs from 'fs/promises';
 import { SkillLoader } from '../../core/skill/skill.js';
 import { Logger, LogLevel, getLogger } from '../../core/logging/index.js';
+import { fileURLToPath } from 'url';
 
 const logger = getLogger('cli');
+
+/**
+ * Find the package root by resolving from the main package entry point
+ * This works whether CLI is run from source (npm link) or installed globally
+ */
+function getPackageSkillsDir(): string {
+  // Get directory of current module
+  const currentFile = fileURLToPath(import.meta.url);
+  const currentDir = path.dirname(currentFile);
+
+  // The skills should be at package root's .transpec/skills
+  // From dist/cli/commands/apply.js:
+  // - 1 level up = dist/cli
+  // - 2 levels up = dist
+  // - 3 levels up = package root (where .transpec lives)
+  const packageRoot = path.resolve(currentDir, '..', '..', '..');
+
+  return path.join(packageRoot, '.transpec', 'skills');
+}
+
+const PACKAGE_SKILLS_DIR = getPackageSkillsDir();
+
+/**
+ * Copy skills from package to project if they don't exist
+ */
+async function ensureProjectSkills(projectPath: string): Promise<void> {
+  const projectSkillsDir = path.join(projectPath, '.transpec', 'skills');
+
+  // Check if package skills exist
+  try {
+    await fs.access(PACKAGE_SKILLS_DIR);
+  } catch {
+    // Package skills don't exist, skip
+    logger.debug('No package skills found', { path: PACKAGE_SKILLS_DIR });
+    return;
+  }
+
+  // Check if project skills already exist
+  try {
+    await fs.access(projectSkillsDir);
+    // Project skills exist, don't overwrite
+    logger.debug('Project skills already exist', { path: projectSkillsDir });
+    return;
+  } catch {
+    // Project skills don't exist, create and copy
+  }
+
+  // Create project skills directory
+  await fs.mkdir(projectSkillsDir, { recursive: true });
+  logger.debug('Created skills directory', { path: projectSkillsDir });
+
+  // Read skills from package
+  const skillDirs = await fs.readdir(PACKAGE_SKILLS_DIR);
+
+  for (const skillDir of skillDirs) {
+    const srcDir = path.join(PACKAGE_SKILLS_DIR, skillDir);
+    const destDir = path.join(projectSkillsDir, skillDir);
+
+    // Skip if not a directory
+    const stat = await fs.stat(srcDir);
+    if (!stat.isDirectory()) {
+      continue;
+    }
+
+    // Copy skill directory
+    await copyDirRecursive(srcDir, destDir);
+    logger.debug('Copied skill', { from: srcDir, to: destDir });
+  }
+}
+
+/**
+ * Recursively copy directory
+ */
+async function copyDirRecursive(src: string, dest: string): Promise<void> {
+  await fs.mkdir(dest, { recursive: true });
+  const entries = await fs.readdir(src, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const srcPath = path.join(src, entry.name);
+    const destPath = path.join(dest, entry.name);
+
+    if (entry.isDirectory()) {
+      await copyDirRecursive(srcPath, destPath);
+    } else {
+      await fs.copyFile(srcPath, destPath);
+    }
+  }
+}
 
 interface ApplyOptions {
   projectPath?: string;
@@ -126,10 +215,33 @@ export async function applyCommand(options: ApplyOptions) {
     }
   }
 
+  // Ensure post-migration skills are available
+  console.log(chalk.bold('Step 3: Setting up post-migration skills...\n'));
+  await ensureProjectSkills(projectPath);
+
+  const projectSkillsDir = path.join(projectPath, '.transpec', 'skills');
+  try {
+    const skillDirs = await fs.readdir(projectSkillsDir);
+    let skillsCount = 0;
+    for (const d of skillDirs) {
+      const stat = await fs.stat(path.join(projectSkillsDir, d));
+      if (stat.isDirectory()) {
+        skillsCount++;
+      }
+    }
+
+    if (skillsCount > 0) {
+      console.log(`  ${chalk.green('Skills installed:')} ${skillsCount} skill(s) in .transpec/skills/`);
+    } else {
+      console.log(`  ${chalk.gray('No skills found in package')}`);
+    }
+  } catch {
+    console.log(`  ${chalk.gray('No skills directory found')}`);
+  }
   console.log();
 
   // Step 4: Load and display post-migration skills
-  console.log(chalk.bold('Step 3: Checking post-migration skills...\n'));
+  console.log(chalk.bold('Step 4: Checking post-migration skills...\n'));
 
   const skillsDir = path.join(projectPath, '.transpec', 'skills');
   const loader = new SkillLoader(skillsDir);

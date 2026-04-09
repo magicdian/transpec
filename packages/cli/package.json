@@ -8,7 +8,8 @@
     "transpec": "./bin/transpec.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && npm run copy-assets",
+    "copy-assets": "node -e \"const fs=require('fs');const path=require('path');function copyDir(s,d){fs.mkdirSync(d,{recursive:true});for(const e of fs.readdirSync(s)){const sp=path.join(s,e),dp=path.join(d,e);fs.statSync(sp).isDirectory()?copyDir(sp,dp):fs.copyFileSync(sp,dp);}};copyDir('.transpec','dist/.transpec');\"",
     "prepublish": "npm run build",
     "test": "vitest"
   },
