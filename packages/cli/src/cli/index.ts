@@ -32,8 +32,9 @@ program
   .description('Initialize transpec in the current project')
   .option('-s, --source <framework>', 'Source framework (auto-detected if not specified)')
   .option('-t, --target <framework>', 'Target framework')
-  .option('-i, --ide <ide>', 'Target IDE (claude-code, cursor, opencode, codex)')
+  .option('-i, --ide <ide>', 'Target IDE (claude-code, none)', 'claude-code')
   .option('-m, --mode <mode>', 'Analysis mode (sampling|full|on-demand)', 'on-demand')
+  .option('-y, --yes', 'Skip confirmation prompts (non-interactive mode)')
   .option('-v, --verbose', 'Enable verbose logging')
   .action(initCommand);
 
