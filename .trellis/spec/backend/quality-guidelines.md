@@ -237,3 +237,91 @@ ESLint configuration exists in sibling projects (`SpecFrameworks/OpenSpec/eslint
 
 **Before**: "Happy path is fine for now"
 **After**: "Handle empty arrays, missing files, invalid input explicitly"
+
+---
+
+## Scenario: Init Menuconfig Keyboard And Focus Contract
+
+### 1. Scope / Trigger
+- Trigger: `transpec init` interactive mode uses a custom keyboard-driven TUI instead of linear prompts.
+- This is contract-level because regressions in key semantics or focus restoration directly break user workflow.
+
+### 2. Signatures
+
+```typescript
+type MenuEventType = 'enter' | 'space' | 'escape' | 'ctrl-c';
+
+interface MenuEvent {
+  type: MenuEventType;
+  focusedRowId: string | null;
+  row: FocusableMenuRow | null;
+}
+
+async function waitForMenuEvent(
+  frameBuilder: () => MenuFrame,
+  focusRowId: string | null,
+): Promise<MenuEvent>;
+```
+
+### 3. Contracts
+
+Keyboard semantics:
+- `Enter`: enter submenu or execute action; must not toggle single/multi selections.
+- `Space`: toggle/select for choice rows (`< >/<*>`, `[ ]/[*]`, toggle rows).
+- `Esc`: return to parent menu; at root menu can be no-op by design.
+
+Focus restoration contract:
+- After returning from submenu, parent menu focus must stay on the row that opened that submenu.
+- Example: enter `Target Framework` submenu, press `Esc`, parent focus must remain on `Target Framework`.
+
+Main menu row grammar contract:
+- `Source Framework`, `Target Framework`, `Analysis Mode`, `Code Spec Organization` are action-entry rows with `--->` and no leading single-choice marker.
+- Multi-select rows use `[ ]/[*]`.
+- Single-choice rows inside submenus use `< >/<*>`.
+
+### 4. Validation & Error Matrix
+
+| Condition | Expected behavior |
+|-----------|-------------------|
+| `Esc` inside any submenu | Return one level up |
+| `Esc` at root menu | Keep current screen (no forced exit) |
+| Return from submenu | Focus remains on originating row |
+| `Enter` on single-choice row | No selection change |
+| `Space` on single-choice row | Selection changes to focused option |
+| `Space` on multi-choice row | Toggle focused option only |
+
+### 5. Good / Base / Bad Cases
+
+- Good:
+  - User enters `Target Framework`, presses `Esc`, lands back on `Target Framework` row.
+  - User changes `Analysis Mode` with `Space` inside submenu; `Enter` does not toggle.
+- Base:
+  - User navigates only with arrows and `Enter`; no toggles occur accidentally.
+- Bad:
+  - Returning from submenu resets focus to first item (`IDE / Agent Setup`).
+  - `Enter` on single-choice row changes selection.
+
+### 6. Tests Required
+
+- Keep pure helper tests for config serialization in `src/cli/commands/init.test.ts`.
+- Add interaction-state tests when menu state transitions are extracted into testable helpers:
+  - Focus restoration after submenu exit.
+  - Key semantic matrix (`Enter` vs `Space` vs `Esc`) for each row type.
+  - Root `Esc` no-op behavior.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+// Submenu returns but parent focus is not restored.
+await runTargetMenu(draft);
+// focusRowId left unchanged or reset to first row by default render path.
+```
+
+#### Correct
+
+```typescript
+await runTargetMenu(draft);
+focusRowId = 'edit-target';
+```

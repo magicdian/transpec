@@ -324,3 +324,115 @@ await configureProjectLogger({
   logFile: options.logFile,
 });
 ```
+
+---
+
+## Scenario: Init Menuconfig Logging Control Contract
+
+### 1. Scope / Trigger
+- Trigger: `transpec init` uses an interactive menuconfig-style TUI to control logging behavior.
+- This is infra-level because it defines the persisted logging contract in `.transpec/config.yaml` and interactive control semantics for file logging and log level selection.
+
+### 2. Signatures
+
+```typescript
+type LogLevelValue = 'trace' | 'debug' | 'info' | 'warn' | 'error';
+
+interface InitDraftConfig {
+  fileLoggingEnabled: boolean;
+  logLevel: LogLevelValue;
+}
+
+function buildInitConfigYaml(input: {
+  logLevel: LogLevelValue;
+  fileLoggingEnabled: boolean;
+  // ...
+}): string;
+```
+
+### 3. Contracts
+
+Main menu contract:
+- `Enable File Logging` is a toggle-entry row.
+- Disabled state: `< > Enable File Logging` (no `--->`, `Enter` does nothing).
+- Enabled state: `<*> Enable File Logging (<level>) --->` (`Enter` opens log-level submenu).
+- `Space` toggles file logging enabled/disabled from main menu.
+
+Log-level submenu contract:
+- Menu must render single-choice rows only:
+  - `<*> trace`
+  - `< > debug`
+  - `< > info`
+  - `< > warn`
+  - `< > error`
+- `Space` changes selected log level.
+- `Enter` does not change selection.
+- `Esc` returns to parent menu.
+
+Persisted config contract:
+
+```yaml
+logging:
+  level: <trace|debug|info|warn|error>
+  console: true
+  file:
+    enabled: <true|false>
+    path: .transpec/logs/transpec.log
+    maxSize: 10485760
+    maxFiles: 5
+```
+
+### 4. Validation & Error Matrix
+
+| Condition | Expected behavior |
+|-----------|-------------------|
+| `Space` on `Enable File Logging` row | Toggle `fileLoggingEnabled` |
+| `Enter` on disabled logging row | No submenu transition |
+| `Enter` on enabled logging row | Open log-level submenu |
+| `Space` on log-level row | Update `draft.logLevel` |
+| `Esc` in log-level submenu | Return to main menu and keep current selection |
+| Selected level invalid or missing in non-interactive fallback | Fallback to `info` |
+
+### 5. Good / Base / Bad Cases
+
+- Good:
+  - User enables file logging, enters submenu, selects `debug`, exits; config writes `enabled: true` and `level: debug`.
+- Base:
+  - User never enters logging submenu; defaults remain `enabled: true`, `level: info` (or `debug` when verbose bootstrap is used).
+- Bad:
+  - Disabled state still shows `--->` and allows submenu entry.
+  - Log-level changes only with `Enter` instead of `Space`.
+
+### 6. Tests Required
+
+- `src/cli/commands/init.test.ts`
+  - Assert YAML includes `logging.file.enabled` and `logging.level` from draft state.
+  - Assert `codeSpec: null` path does not affect logging output.
+- Add focused interaction tests when TUI state helpers are extracted:
+  - `Space` toggles logging row.
+  - `Enter` on disabled logging row does not open submenu.
+  - `Space` changes log-level selection inside single-choice submenu.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+// Always enter log-level menu regardless of enabled state.
+if (event.type === 'enter' && event.row?.id === 'edit-logging') {
+  await runLogLevelMenu(draft);
+}
+```
+
+#### Correct
+
+```typescript
+// Only enabled logging row is enterable.
+if (event.type === 'space' && event.row?.id === 'edit-logging') {
+  draft.fileLoggingEnabled = !draft.fileLoggingEnabled;
+}
+
+if (event.type === 'enter' && event.row?.id === 'edit-logging' && draft.fileLoggingEnabled) {
+  await runLogLevelMenu(draft);
+}
+```
