@@ -1,0 +1,9 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Type safety and refactor quality rules for init command changes"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Ensure init log toggle writes compatible logging config"}
+{"file": ".trellis/spec/backend/testing-guidelines.md", "reason": "Add/adjust tests for new interactive config flow"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Avoid duplicated menu rendering logic by extracting helpers"}
+{"file": "packages/cli/src/cli/commands/init.ts", "reason": "Current init flow, prompts, config output and IDE setup pipeline"}
+{"file": "packages/cli/src/cli/utils/logging.ts", "reason": "Ensure written logging config stays compatible with runtime logger setup"}
+{"file": "packages/cli/src/cli/commands/convert.ts", "reason": "Reuse CLI option precedence and validation style"}
