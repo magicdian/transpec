@@ -446,3 +446,35 @@ Refactored Transpec into init -> agent preprocess -> agent apply, moved built-in
 ### Next Steps
 
 - None - task complete
+
+
+## Session 14: Fix transpec log persistence and logging code-spec
+
+**Date**: 2026-04-10
+**Task**: Fix transpec log persistence and logging code-spec
+
+### Summary
+
+Implemented project-config-driven file logging persistence for CLI commands, updated logger writer and init defaults, added regression tests, and captured executable contracts in backend logging spec; archived completed task.
+
+### Main Changes
+
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1d01733` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
