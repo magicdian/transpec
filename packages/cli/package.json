@@ -1,6 +1,6 @@
 {
   "name": "@magicdian/transpec",
-  "version": "2604.10.2",
+  "version": "2604.10.3",
   "type": "module",
   "description": "Universal spec conversion tool",
   "main": "dist/index.js",

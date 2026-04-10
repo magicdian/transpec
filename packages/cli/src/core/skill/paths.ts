@@ -67,6 +67,14 @@ export function getProjectIrDbPath(projectPath: string): string {
   return path.join(getProjectIrDir(projectPath), 'conversion.db');
 }
 
+export function getProjectLogsDir(projectPath: string): string {
+  return path.join(getProjectTranspecDir(projectPath), 'logs');
+}
+
+export function getProjectLogFilePath(projectPath: string): string {
+  return path.join(getProjectLogsDir(projectPath), 'transpec.log');
+}
+
 export function toProjectRelativePath(projectPath: string, targetPath: string): string {
   return normalizeProjectRelative(path.relative(projectPath, targetPath));
 }

@@ -1,0 +1,9 @@
+{"file": ".opencode/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".opencode/commands/trellis/check-backend.md", "reason": "Backend check spec"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Verify logger levels, file output, and CLI config behavior"}
+{"file": ".trellis/spec/backend/testing-guidelines.md", "reason": "Ensure bug fix includes automated tests"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Verify fallback behavior when config is missing or file logging is disabled"}
+{"file": "packages/cli/src/cli/commands/preprocess.ts", "reason": "Review per-command logger configuration"}
+{"file": "packages/cli/src/core/logging/logger.ts", "reason": "Review file writer implementation and persistence semantics"}
+{"file": "packages/cli/src/cli/commands/init.ts", "reason": "Review init defaults and generated config"}
+{"file": "packages/cli/src/cli/utils/project-config.ts", "reason": "Review config parsing for logging fields"}

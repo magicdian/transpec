@@ -11,7 +11,7 @@ import chalk from 'chalk';
 import * as fs from 'fs/promises';
 import { ConversionEngine } from '../../core/engine/engine.js';
 import { SQLiteStorage } from '../../core/storage/sqlite.js';
-import { Logger, LogLevel, LogModules, getLogger } from '../../core/logging/index.js';
+import { LogModules, getLogger } from '../../core/logging/index.js';
 import {
   getProjectEnhancedAnalysisPath,
   getProjectFrameworkSkillPath,
@@ -19,6 +19,7 @@ import {
   writePreprocessContext,
 } from '../../core/skill/index.js';
 import { loadProjectConfig } from '../utils/project-config.js';
+import { configureProjectLogger } from '../utils/logging.js';
 
 const logger = getLogger(LogModules.CLI);
 
@@ -56,10 +57,9 @@ async function runRawIrGeneration(
 
 export async function preprocessCommand(options: PreprocessOptions): Promise<void> {
   const projectPath = options.projectPath || process.cwd();
-
-  Logger.configure({
-    level: options.verbose ? LogLevel.DEBUG : LogLevel.INFO,
-    console: true,
+  await configureProjectLogger({
+    projectPath,
+    verbose: options.verbose,
   });
 
   console.log(chalk.blue(`\n=== Transpec Preprocess ===\n`));

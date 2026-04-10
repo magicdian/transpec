@@ -22,14 +22,24 @@ export interface WorkspaceConfigSection {
   postprocessContext?: string;
 }
 
+export interface LoggingFileConfigSection {
+  enabled?: boolean;
+  path?: string;
+  maxSize?: number;
+  maxFiles?: number;
+}
+
+export interface LoggingConfigSection {
+  level?: string;
+  console?: boolean;
+  file?: LoggingFileConfigSection;
+}
+
 export interface ProjectConfig {
   project?: ProjectConfigSection;
   skills?: SkillConfigSection;
   workspace?: WorkspaceConfigSection;
-  logging?: {
-    level?: string;
-    console?: boolean;
-  };
+  logging?: LoggingConfigSection;
 }
 
 export async function loadProjectConfig(projectPath: string): Promise<ProjectConfig> {

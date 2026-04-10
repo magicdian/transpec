@@ -9,6 +9,9 @@
  * - Structured JSON logging for machine parsing
  */
 
+import * as fs from 'fs';
+import * as path from 'path';
+
 export enum LogLevel {
   TRACE = 0,
   DEBUG = 1,
@@ -37,30 +40,39 @@ export interface LogEntry {
   data?: Record<string, unknown>;
 }
 
-const DEFAULT_CONFIG: LoggerConfig = {
-  level: LogLevel.INFO,
-  console: true,
-  file: {
-    enabled: false,
-  },
-  moduleLevels: {},
-};
+function createDefaultConfig(): LoggerConfig {
+  return {
+    level: LogLevel.INFO,
+    console: true,
+    file: {
+      enabled: false,
+    },
+    moduleLevels: {},
+  };
+}
 
 export class Logger {
   private module: string;
-  private config: LoggerConfig;
-  private static globalConfig: LoggerConfig = { ...DEFAULT_CONFIG };
+  private static globalConfig: LoggerConfig = createDefaultConfig();
   private static writers: Map<string, LogWriter> = new Map();
 
   constructor(module: string) {
     this.module = module;
-    this.config = Logger.globalConfig;
   }
 
   static configure(config: Partial<LoggerConfig>): void {
+    const mergedFile = config.file
+      ? {
+          ...Logger.globalConfig.file,
+          ...config.file,
+          enabled: config.file.enabled ?? Logger.globalConfig.file?.enabled ?? false,
+        }
+      : Logger.globalConfig.file;
+
     Logger.globalConfig = {
       ...Logger.globalConfig,
       ...config,
+      file: mergedFile,
       moduleLevels: {
         ...Logger.globalConfig.moduleLevels,
         ...config.moduleLevels,
@@ -69,7 +81,13 @@ export class Logger {
 
     // Setup file writer if enabled
     if (Logger.globalConfig.file?.enabled && Logger.globalConfig.file.path) {
-      if (!Logger.writers.has(Logger.globalConfig.file.path)) {
+      const existingWriter = Logger.writers.get(Logger.globalConfig.file.path);
+      if (existingWriter) {
+        existingWriter.updateOptions({
+          maxSize: Logger.globalConfig.file.maxSize,
+          maxFiles: Logger.globalConfig.file.maxFiles,
+        });
+      } else {
         const writer = new LogWriter(Logger.globalConfig.file.path, {
           maxSize: Logger.globalConfig.file.maxSize,
           maxFiles: Logger.globalConfig.file.maxFiles,
@@ -79,13 +97,19 @@ export class Logger {
     }
   }
 
+  static reset(): void {
+    Logger.globalConfig = createDefaultConfig();
+    Logger.writers.clear();
+  }
+
   static getConfig(): LoggerConfig {
     return Logger.globalConfig;
   }
 
   private shouldLog(level: LogLevel): boolean {
-    const moduleLevel = this.config.moduleLevels?.[this.module];
-    const effectiveLevel = moduleLevel ?? this.config.level;
+    const config = Logger.globalConfig;
+    const moduleLevel = config.moduleLevels?.[this.module];
+    const effectiveLevel = moduleLevel ?? config.level;
     return level >= effectiveLevel;
   }
 
@@ -101,7 +125,9 @@ export class Logger {
     };
 
     // Console output
-    if (this.config.console) {
+    const config = Logger.globalConfig;
+
+    if (config.console) {
       const prefix = `[${entry.timestamp}] [${levelStr}] [${this.module}]`;
       if (data) {
         console.log(`${prefix} ${message}`, data);
@@ -111,8 +137,8 @@ export class Logger {
     }
 
     // File output
-    if (this.config.file?.enabled && this.config.file.path) {
-      const writer = Logger.writers.get(this.config.file.path);
+    if (config.file?.enabled && config.file.path) {
+      const writer = Logger.writers.get(config.file.path);
       if (writer) {
         writer.write(entry);
       }
@@ -142,30 +168,77 @@ export class Logger {
 
 class LogWriter {
   private path: string;
-  private buffer: LogEntry[] = [];
   private maxSize: number;
   private maxFiles: number;
-  private currentSize = 0;
+  private currentSize: number;
+  private fileErrorReported = false;
 
   constructor(path: string, options?: { maxSize?: number; maxFiles?: number }) {
     this.path = path;
     this.maxSize = options?.maxSize ?? 10 * 1024 * 1024; // 10MB default
     this.maxFiles = options?.maxFiles ?? 5;
+    this.currentSize = this.readCurrentSize();
+  }
+
+  updateOptions(options?: { maxSize?: number; maxFiles?: number }): void {
+    this.maxSize = options?.maxSize ?? this.maxSize;
+    this.maxFiles = options?.maxFiles ?? this.maxFiles;
   }
 
   write(entry: LogEntry): void {
-    const line = JSON.stringify(entry) + '\n';
-    this.buffer.push(entry);
-    this.currentSize += Buffer.byteLength(line, 'utf-8');
+    try {
+      const line = JSON.stringify(entry) + '\n';
+      const lineSize = Buffer.byteLength(line, 'utf-8');
 
-    if (this.currentSize >= this.maxSize) {
-      this.rotate();
+      fs.mkdirSync(path.dirname(this.path), { recursive: true });
+
+      if (this.currentSize + lineSize > this.maxSize) {
+        this.rotate();
+      }
+
+      fs.appendFileSync(this.path, line, 'utf-8');
+      this.currentSize += lineSize;
+      this.fileErrorReported = false;
+    } catch (error) {
+      if (!this.fileErrorReported) {
+        process.stderr.write(
+          `[transpec] Failed to write log file ${this.path}: ${(error as Error).message}\n`,
+        );
+        this.fileErrorReported = true;
+      }
     }
   }
 
-  private async rotate(): Promise<void> {
-    // This is a simplified rotation - in production you'd use a proper rotation library
-    this.buffer = [];
+  private readCurrentSize(): number {
+    try {
+      return fs.statSync(this.path).size;
+    } catch {
+      return 0;
+    }
+  }
+
+  private rotate(): void {
+    if (this.maxFiles > 1) {
+      const oldestFile = `${this.path}.${this.maxFiles - 1}`;
+      if (fs.existsSync(oldestFile)) {
+        fs.rmSync(oldestFile, { force: true });
+      }
+
+      for (let index = this.maxFiles - 2; index >= 1; index -= 1) {
+        const source = `${this.path}.${index}`;
+        const target = `${this.path}.${index + 1}`;
+        if (fs.existsSync(source)) {
+          fs.renameSync(source, target);
+        }
+      }
+
+      if (fs.existsSync(this.path)) {
+        fs.renameSync(this.path, `${this.path}.1`);
+      }
+    } else if (fs.existsSync(this.path)) {
+      fs.rmSync(this.path, { force: true });
+    }
+
     this.currentSize = 0;
   }
 }

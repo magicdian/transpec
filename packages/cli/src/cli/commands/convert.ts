@@ -7,11 +7,12 @@ import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import { ConversionEngine } from '../../core/engine/engine.js';
-import { Logger, LogModules, LogLevel, getLogger } from '../../core/logging/index.js';
+import { LogModules, getLogger } from '../../core/logging/index.js';
 import { frameworkRegistry } from '../../core/framework/index.js';
 import { loadProjectConfig } from '../utils/project-config.js';
 import { getProjectIrDbPath, getProjectIrDir } from '../../core/skill/index.js';
 import { FrameworkType } from '../../core/ir/types.js';
+import { configureProjectLogger } from '../utils/logging.js';
 
 const logger = getLogger(LogModules.CLI);
 
@@ -26,15 +27,14 @@ export interface ConvertOptions {
 }
 
 export async function convertCommand(options: ConvertOptions): Promise<void> {
-  // Configure logging
-  Logger.configure({
-    level: options.verbose ? LogLevel.DEBUG : LogLevel.INFO,
-    console: true,
+  const projectPath = options.projectPath ? path.resolve(options.projectPath) : process.cwd();
+  await configureProjectLogger({
+    projectPath,
+    verbose: options.verbose,
+    logFile: options.logFile,
   });
 
   logger.info('Starting conversion', { options });
-
-  const projectPath = options.projectPath ? path.resolve(options.projectPath) : process.cwd();
 
   console.log(chalk.blue(`\nStarting conversion in: ${projectPath}\n`));
 

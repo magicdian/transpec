@@ -5,8 +5,11 @@ export {
   getProjectFrameworkSkillPath,
   getProjectIrDir,
   getProjectIrDbPath,
+  getProjectLogFilePath,
+  getProjectLogsDir,
   getProjectPostprocessContextPath,
   getProjectPreprocessContextPath,
+  getProjectTranspecDir,
   getProjectWorkspaceDir,
   toProjectRelativePath,
 } from './paths.js';

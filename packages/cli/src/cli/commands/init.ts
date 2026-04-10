@@ -22,11 +22,13 @@ import { FrameworkType } from '../../core/ir/types.js';
 import {
   getProjectEnhancedAnalysisPath,
   getProjectFrameworkSkillPath,
+  getProjectLogFilePath,
   getProjectPostprocessContextPath,
   getProjectPreprocessContextPath,
   materializeProjectSkills,
   toProjectRelativePath,
 } from '../../core/skill/index.js';
+import { configureProjectLogger } from '../utils/logging.js';
 
 const logger = getLogger(LogModules.CLI);
 
@@ -272,14 +274,14 @@ function isCiMode(): boolean {
 }
 
 export async function initCommand(options: InitOptions) {
-  // Configure logging
-  Logger.configure({
-    level: options.verbose ? LogLevel.DEBUG : LogLevel.INFO,
-    console: true,
+  const projectPath = process.cwd();
+  await configureProjectLogger({
+    projectPath,
+    verbose: options.verbose,
+    enableFileLoggingByDefault: true,
   });
 
   logger.info('Starting transpec initialization');
-  const projectPath = process.cwd();
 
   // Show banner in interactive mode
   const interactive = isInteractive() && !isCiMode() && !options.yes;
@@ -449,7 +451,10 @@ logging:
   level: ${options.verbose ? 'debug' : 'info'}
   console: true
   file:
-    enabled: false
+    enabled: true
+    path: ${toProjectRelativePath(projectPath, getProjectLogFilePath(projectPath))}
+    maxSize: 10485760
+    maxFiles: 5
 
 createdAt: "${createdAt}"
 `;

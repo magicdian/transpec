@@ -11,7 +11,7 @@ import chalk from 'chalk';
 import * as fs from 'fs/promises';
 import { SQLiteStorage } from '../../core/storage/sqlite.js';
 import { ConversionEngine } from '../../core/engine/engine.js';
-import { Logger, LogLevel, LogModules, getLogger } from '../../core/logging/index.js';
+import { LogModules, getLogger } from '../../core/logging/index.js';
 import {
   getProjectEnhancedAnalysisPath,
   getProjectFrameworkSkillPath,
@@ -21,6 +21,7 @@ import {
   writePostprocessContext,
 } from '../../core/skill/index.js';
 import { loadProjectConfig } from '../utils/project-config.js';
+import { configureProjectLogger } from '../utils/logging.js';
 
 const logger = getLogger(LogModules.CLI);
 
@@ -31,12 +32,11 @@ interface ApplyOptions {
 }
 
 export async function applyCommand(options: ApplyOptions): Promise<void> {
-  Logger.configure({
-    level: options.verbose ? LogLevel.DEBUG : LogLevel.INFO,
-    console: true,
-  });
-
   const projectPath = options.projectPath || process.cwd();
+  await configureProjectLogger({
+    projectPath,
+    verbose: options.verbose,
+  });
 
   console.log(chalk.blue(`\n=== Transpec Apply ===\n`));
   console.log(`Project: ${chalk.cyan(projectPath)}\n`);

@@ -128,12 +128,13 @@ logger.error('Conversion failed', { issues });
 
 ### In CLI commands (`src/cli/`)
 
-Configure for user-facing output:
+Always configure logger through project-aware helper:
 
 ```typescript
-Logger.configure({
-  level: options.verbose ? LogLevel.DEBUG : LogLevel.INFO,
-  console: true,
+await configureProjectLogger({
+  projectPath,
+  verbose: options.verbose,
+  logFile: options.logFile, // optional override
 });
 
 // Use chalk for colored user output
@@ -187,12 +188,12 @@ logger.info('Parse phase completed', { count: entities.length });
 ### 3. Not configuring logger in CLI
 
 ```typescript
-// BAD - logger might not output anything
-const logger = getLogger(LogModules.CLI);
-logger.info('Starting'); // Might not show!
-
-// GOOD - configure first
+// BAD - ignores .transpec/config.yaml and project defaults
 Logger.configure({ level: LogLevel.INFO, console: true });
+
+// GOOD - use shared project-aware setup
+await configureProjectLogger({ projectPath, verbose: options.verbose });
+const logger = getLogger(LogModules.CLI);
 logger.info('Starting');
 ```
 
@@ -204,9 +205,15 @@ Logger is configured via `Logger.configure()`:
 
 ```typescript
 interface LoggerConfig {
-  level: LogLevel;      // Minimum level to output
-  console: boolean;     // Output to console
-  file?: string;        // Optional file path for JSON logs
+  level: LogLevel;  // Minimum level to output
+  console?: boolean;
+  file?: {
+    enabled: boolean;
+    path?: string;
+    maxSize?: number; // bytes
+    maxFiles?: number;
+  };
+  moduleLevels?: Record<string, LogLevel>;
 }
 ```
 
@@ -214,4 +221,106 @@ For tests, disable console to reduce noise:
 
 ```typescript
 Logger.configure({ level: LogLevel.ERROR, console: false });
+```
+
+---
+
+## Scenario: Project Log Persistence for CLI Runtime
+
+### 1. Scope / Trigger
+- Trigger: CLI command logging now depends on `.transpec/config.yaml` and file persistence under `.transpec/logs/`.
+- This is infra-level because it changes runtime behavior across `init`, `convert`, `apply`, `detect`, and `preprocess`.
+
+### 2. Signatures
+
+```typescript
+interface ConfigureProjectLoggerOptions {
+  projectPath: string;
+  verbose?: boolean;
+  logFile?: string;
+  enableFileLoggingByDefault?: boolean;
+}
+
+async function configureProjectLogger(
+  options: ConfigureProjectLoggerOptions,
+): Promise<void>;
+
+class Logger {
+  static configure(config: Partial<LoggerConfig>): void;
+  static getConfig(): LoggerConfig;
+  static reset(): void;
+}
+```
+
+### 3. Contracts
+
+Config contract in `.transpec/config.yaml`:
+
+```yaml
+logging:
+  level: info
+  console: true
+  file:
+    enabled: true
+    path: .transpec/logs/transpec.log
+    maxSize: 10485760
+    maxFiles: 5
+```
+
+Behavior contract:
+- `transpec init` must write the logging section above with file logging enabled by default.
+- Commands must call `configureProjectLogger(...)` instead of directly using `Logger.configure(...)`.
+- If `--log-file` is passed, file logging is forced on and uses that path.
+- If file path is relative, it resolves against project root.
+- Logger file writer must create parent directories and append JSON log entries line-by-line.
+
+### 4. Validation & Error Matrix
+
+| Condition | Expected behavior |
+|-----------|-------------------|
+| `.transpec/config.yaml` missing | Continue with defaults; no throw for missing file |
+| `logging.level` unknown | Fallback to `INFO` |
+| `verbose=true` and config level is `WARN/ERROR` | Effective level becomes `DEBUG` |
+| `logging.file.enabled=false` with explicit `path` | File logging stays disabled |
+| Legacy `enabled=false` without `path` in project | File logging still enabled at default project path |
+| Log file write fails | Write one stderr warning and continue command flow |
+
+### 5. Good / Base / Bad Cases
+
+- Good:
+  - Initialized project (`.transpec` exists), run command, `.transpec/logs/transpec.log` is created, includes `INFO/WARN/ERROR`.
+- Base:
+  - Non-initialized directory, command still runs with console logging and no file requirement.
+- Bad:
+  - Command directly calls `Logger.configure(...)` and bypasses project config/file defaults.
+
+### 6. Tests Required
+
+- `src/cli/utils/logging.test.ts`
+  - Assert legacy `enabled: false` without explicit path still resolves to project log file path and enables file logging.
+  - Assert explicit `enabled: false` + explicit `path` keeps file logging disabled.
+- `src/core/logging/logger.test.ts`
+  - Assert logger created before `Logger.configure(...)` still writes to file after configure.
+  - Assert configured `TRACE` level is persisted to log file.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+// In command handler
+Logger.configure({
+  level: options.verbose ? LogLevel.DEBUG : LogLevel.INFO,
+  console: true,
+});
+```
+
+#### Correct
+
+```typescript
+await configureProjectLogger({
+  projectPath,
+  verbose: options.verbose,
+  logFile: options.logFile,
+});
 ```

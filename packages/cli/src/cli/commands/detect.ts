@@ -5,7 +5,8 @@
 import chalk from 'chalk';
 import * as path from 'path';
 import { frameworkRegistry } from '../../core/framework/index.js';
-import { Logger, LogModules, LogLevel, getLogger } from '../../core/logging/index.js';
+import { LogModules, getLogger } from '../../core/logging/index.js';
+import { configureProjectLogger } from '../utils/logging.js';
 
 const logger = getLogger(LogModules.CLI);
 
@@ -15,16 +16,16 @@ export interface DetectOptions {
 }
 
 export async function detectCommand(options: DetectOptions) {
-  // Configure logging based on verbose flag
+  const projectPath = path.resolve(options.path);
+  await configureProjectLogger({
+    projectPath,
+    verbose: options.verbose,
+  });
+
   if (options.verbose) {
-    Logger.configure({
-      level: LogLevel.DEBUG,
-      console: true,
-    });
     logger.debug('Verbose logging enabled');
   }
 
-  const projectPath = path.resolve(options.path);
   logger.info(`Detecting frameworks in: ${projectPath}`);
 
   console.log(chalk.blue(`\nDetecting frameworks in: ${projectPath}\n`));
