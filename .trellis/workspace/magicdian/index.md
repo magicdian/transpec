@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 14
+- **Total Sessions**: 15
 - **Last Active**: 2026-04-10
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~480 | Active |
+| `journal-1.md` | ~530 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits |
 |---|------|-------|---------|
+| 15 | 2026-04-10 | Init menuconfig UX + logging contract | `0cc2db1`, `a8f12b9` |
 | 14 | 2026-04-10 | Fix transpec log persistence and logging code-spec | `1d01733` |
 | 13 | 2026-04-10 | Align agent-driven Transpec workflow | `ccb5362` |
 | 12 | 2026-04-10 | 修复 transpec apply 生成 Trellis specs 流程 | `3dc8e15` |

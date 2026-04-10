@@ -478,3 +478,53 @@ Implemented project-config-driven file logging persistence for CLI commands, upd
 ### Next Steps
 
 - None - task complete
+
+
+## Session 15: Init menuconfig UX + logging contract
+
+**Date**: 2026-04-10
+**Task**: Init menuconfig UX + logging contract
+
+### Summary
+
+Reworked transpec init into menuconfig-style keyboard UI, fixed Esc latency, added logging-level visibility, and updated backend code-spec contracts.
+
+### Main Changes
+
+| Area | Description |
+|------|-------------|
+| Init TUI | Replaced linear prompt flow with menu-driven keyboard interaction using Enter/Space/Esc semantics. |
+| Focus UX | Restored parent-menu focus to the originating row after exiting child menus. |
+| Logging UX | Added two-state logging entry behavior and log-level display on main row; only enterable when enabled. |
+| Performance | Reduced Esc delay by configuring keypress escape timeout for immediate submenu back navigation. |
+| Spec Sync | Added executable contracts to backend logging/quality specs for menuconfig behavior and logging control semantics. |
+| Testing | Added init command tests and verified build + full Vitest suite pass. |
+
+**Primary Files Updated**:
+- `packages/cli/src/cli/commands/init.ts`
+- `packages/cli/src/cli/commands/init.test.ts`
+- `packages/cli/src/cli/index.ts`
+- `.trellis/spec/backend/logging-guidelines.md`
+- `.trellis/spec/backend/quality-guidelines.md`
+- `packages/cli/package.json`
+- `packages/cli/package-lock.json`
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0cc2db1` | (see git log) |
+| `a8f12b9` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
