@@ -1,6 +1,6 @@
 {
   "name": "@magicdian/transpec",
-  "version": "2604.10.1",
+  "version": "2604.10.2",
   "type": "module",
   "description": "Universal spec conversion tool",
   "main": "dist/index.js",
@@ -9,7 +9,7 @@
   },
   "scripts": {
     "build": "tsc && npm run copy-assets",
-    "copy-assets": "node -e \"const fs=require('fs');const path=require('path');function copyDir(s,d){fs.mkdirSync(d,{recursive:true});for(const e of fs.readdirSync(s)){const sp=path.join(s,e),dp=path.join(d,e);fs.statSync(sp).isDirectory()?copyDir(sp,dp):fs.copyFileSync(sp,dp);}};copyDir('.transpec','dist/.transpec');\"",
+    "copy-assets": "node ./scripts/copy-skill-assets.cjs",
     "prepublish": "npm run build",
     "test": "vitest"
   },

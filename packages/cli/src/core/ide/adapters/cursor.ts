@@ -7,8 +7,9 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { IdeAdapter, isDirectory } from '../index.js';
+import { IdeAdapter, IdeSetupOptions, isDirectory } from '../index.js';
 import { getLogger, LogModules } from '../../logging/index.js';
+import { buildApplyWorkflowBody, buildPreprocessWorkflowBody } from '../../skill/index.js';
 
 const logger = getLogger(LogModules.CLI);
 
@@ -45,7 +46,7 @@ export class CursorAdapter implements IdeAdapter {
    * Configure Cursor for transpec
    * Creates .cursor/commands/transpec-apply.md
    */
-  async configure(projectPath: string): Promise<void> {
+  async configure(projectPath: string, options: IdeSetupOptions): Promise<void> {
     const cursorDir = path.join(projectPath, this.skillsDir);
     const commandsDir = path.join(cursorDir, 'commands');
 
@@ -54,8 +55,8 @@ export class CursorAdapter implements IdeAdapter {
     // Create directory structure
     await fs.mkdir(commandsDir, { recursive: true });
 
-    // Generate transpec-apply command
-    await this.generateApplyCommand(commandsDir);
+    await this.generatePreprocessCommand(commandsDir, options);
+    await this.generateApplyCommand(commandsDir, options);
 
     logger.info('Cursor configuration complete', { path: cursorDir });
   }
@@ -63,56 +64,52 @@ export class CursorAdapter implements IdeAdapter {
   /**
    * Generate .cursor/commands/transpec-apply.md
    */
-  private async generateApplyCommand(commandsDir: string): Promise<void> {
+  private async generatePreprocessCommand(commandsDir: string, options: IdeSetupOptions): Promise<void> {
+    const preprocessPath = path.join(commandsDir, 'transpec-preprocess.md');
+    const body = buildPreprocessWorkflowBody({
+      preprocessSkillPath: options.preprocessSkillPath,
+      postprocessSkillPath: options.postprocessSkillPath,
+      preprocessContextPath: options.preprocessContextPath,
+      enhancedAnalysisPath: options.enhancedAnalysisPath,
+      postprocessContextPath: options.postprocessContextPath,
+    });
+
+    const content = `---
+name: /transpec-preprocess
+id: transpec-preprocess
+category: transpec
+description: "Prepare RAW IR and execute source-specific preprocess workflow."
+---
+
+# /transpec-preprocess
+
+${body}
+`;
+
+    await fs.writeFile(preprocessPath, content);
+    logger.debug('Generated transpec-preprocess.md', { path: preprocessPath });
+  }
+
+  private async generateApplyCommand(commandsDir: string, options: IdeSetupOptions): Promise<void> {
     const applyPath = path.join(commandsDir, 'transpec-apply.md');
+    const body = buildApplyWorkflowBody({
+      preprocessSkillPath: options.preprocessSkillPath,
+      postprocessSkillPath: options.postprocessSkillPath,
+      preprocessContextPath: options.preprocessContextPath,
+      enhancedAnalysisPath: options.enhancedAnalysisPath,
+      postprocessContextPath: options.postprocessContextPath,
+    });
 
     const content = `---
 name: /transpec-apply
 id: transpec-apply
 category: transpec
-description: "Apply transpec transformations to convert specs from source to target framework."
+description: "Apply deterministic transform/emit and execute target-specific postprocess workflow."
 ---
 
 # /transpec-apply
 
-Apply transpec transformations to convert specs from source framework to target framework.
-
-## Prerequisites
-
-1. Run \`transpec convert\` first to generate the Intermediate Representation (IR)
-2. Review the IR in \`.transpec/ir/\`
-
-## Usage
-
-Execute this command to apply the transformations:
-
-\`\`\`bash
-transpec apply
-\`\`\`
-
-## What Happens
-
-1. Reads the IR from \`.transpec/ir/\`
-2. Loads the target framework adapter (e.g., Trellis)
-3. Emits the transformed specs to the target framework directory
-4. Copies framework-specific post-processing skills if needed
-
-## Options
-
-- \`--dry-run\` - Preview changes without applying
-- \`--force\` - Overwrite existing files
-
-## Examples
-
-\`\`\`
-/transpec-apply
-/transpec-apply --dry-run
-\`\`\`
-
-## Notes
-
-- Use \`transpec detect --ide\` to check IDE configuration
-- Use \`transpec init --ide cursor\` to initialize Cursor configuration
+${body}
 `;
 
     await fs.writeFile(applyPath, content);

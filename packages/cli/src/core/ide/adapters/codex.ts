@@ -7,8 +7,9 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { IdeAdapter, isDirectory } from '../index.js';
+import { IdeAdapter, IdeSetupOptions, isDirectory } from '../index.js';
 import { getLogger, LogModules } from '../../logging/index.js';
+import { buildApplyWorkflowBody, buildPreprocessWorkflowBody } from '../../skill/index.js';
 
 const logger = getLogger(LogModules.CLI);
 
@@ -54,17 +55,19 @@ export class CodexAdapter implements IdeAdapter {
    * Configure Codex for transpec
    * Creates .codex/skills/transpec-apply/SKILL.md
    */
-  async configure(projectPath: string): Promise<void> {
+  async configure(projectPath: string, options: IdeSetupOptions): Promise<void> {
     const codexDir = path.join(projectPath, this.skillsDir);
-    const skillsDir = path.join(codexDir, 'skills', 'transpec-apply');
+    const preprocessDir = path.join(codexDir, 'skills', 'transpec-preprocess');
+    const applyDir = path.join(codexDir, 'skills', 'transpec-apply');
 
     logger.info('Configuring Codex', { path: codexDir });
 
     // Create directory structure
-    await fs.mkdir(skillsDir, { recursive: true });
+    await fs.mkdir(preprocessDir, { recursive: true });
+    await fs.mkdir(applyDir, { recursive: true });
 
-    // Generate transpec-apply skill
-    await this.generateApplySkill(skillsDir);
+    await this.generatePreprocessSkill(preprocessDir, options);
+    await this.generateApplySkill(applyDir, options);
 
     logger.info('Codex configuration complete', { path: codexDir });
   }
@@ -72,12 +75,48 @@ export class CodexAdapter implements IdeAdapter {
   /**
    * Generate .codex/skills/transpec-apply/SKILL.md
    */
-  private async generateApplySkill(skillsDir: string): Promise<void> {
+  private async generatePreprocessSkill(skillsDir: string, options: IdeSetupOptions): Promise<void> {
     const skillPath = path.join(skillsDir, 'SKILL.md');
+    const body = buildPreprocessWorkflowBody({
+      preprocessSkillPath: options.preprocessSkillPath,
+      postprocessSkillPath: options.postprocessSkillPath,
+      preprocessContextPath: options.preprocessContextPath,
+      enhancedAnalysisPath: options.enhancedAnalysisPath,
+      postprocessContextPath: options.postprocessContextPath,
+    });
+
+    const content = `---
+name: transpec-preprocess
+description: Prepare RAW IR and execute source-specific preprocess workflow.
+license: MIT
+compatibility: Requires transpec CLI.
+metadata:
+  author: transpec
+  version: "1.0"
+---
+
+# transpec-preprocess Skill
+
+${body}
+`;
+
+    await fs.writeFile(skillPath, content);
+    logger.debug('Generated preprocess SKILL.md', { path: skillPath });
+  }
+
+  private async generateApplySkill(skillsDir: string, options: IdeSetupOptions): Promise<void> {
+    const skillPath = path.join(skillsDir, 'SKILL.md');
+    const body = buildApplyWorkflowBody({
+      preprocessSkillPath: options.preprocessSkillPath,
+      postprocessSkillPath: options.postprocessSkillPath,
+      preprocessContextPath: options.preprocessContextPath,
+      enhancedAnalysisPath: options.enhancedAnalysisPath,
+      postprocessContextPath: options.postprocessContextPath,
+    });
 
     const content = `---
 name: transpec-apply
-description: Apply transpec transformations to convert specs from source to target framework.
+description: Apply deterministic transform/emit and execute target-specific postprocess workflow.
 license: MIT
 compatibility: Requires transpec CLI.
 metadata:
@@ -87,44 +126,7 @@ metadata:
 
 # transpec-apply Skill
 
-Apply transpec transformations to convert specs from source framework to target framework.
-
-## Prerequisites
-
-1. Run \`transpec convert\` first to generate the Intermediate Representation (IR)
-2. Review the IR in \`.transpec/ir/\`
-
-## Usage
-
-Execute the apply command:
-
-\`\`\`bash
-transpec apply
-\`\`\`
-
-## What Happens
-
-1. Reads the IR from \`.transpec/ir/\`
-2. Loads the target framework adapter (e.g., Trellis)
-3. Emits the transformed specs to the target framework directory
-4. Copies framework-specific post-processing skills if needed
-
-## Options
-
-- \`--dry-run\` - Preview changes without applying
-- \`--force\` - Overwrite existing files
-
-## Examples
-
-\`\`\`
-transpec apply
-transpec apply --dry-run
-\`\`\`
-
-## Notes
-
-- Use \`transpec detect --ide\` to check IDE configuration
-- Use \`transpec init --ide codex\` to initialize Codex configuration
+${body}
 `;
 
     await fs.writeFile(skillPath, content);

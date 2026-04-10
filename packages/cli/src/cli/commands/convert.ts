@@ -1,14 +1,17 @@
 /**
- * convert command - Convert specs between frameworks
+ * convert command - Generate deterministic RAW IR between frameworks
  */
 
 import chalk from 'chalk';
+import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs/promises';
-import { frameworkRegistry } from '../../core/framework/index.js';
 import { ConversionEngine } from '../../core/engine/engine.js';
 import { Logger, LogModules, LogLevel, getLogger } from '../../core/logging/index.js';
-import { parseYaml } from '../utils/yaml.js';
+import { frameworkRegistry } from '../../core/framework/index.js';
+import { loadProjectConfig } from '../utils/project-config.js';
+import { getProjectIrDbPath, getProjectIrDir } from '../../core/skill/index.js';
+import { FrameworkType } from '../../core/ir/types.js';
 
 const logger = getLogger(LogModules.CLI);
 
@@ -22,18 +25,7 @@ export interface ConvertOptions {
   projectPath?: string;
 }
 
-interface Config {
-  project?: {
-    sourceFramework?: string;
-    targetFramework?: string;
-    mode?: string;
-  };
-  logging?: {
-    level?: string;
-  };
-}
-
-export async function convertCommand(options: ConvertOptions) {
+export async function convertCommand(options: ConvertOptions): Promise<void> {
   // Configure logging
   Logger.configure({
     level: options.verbose ? LogLevel.DEBUG : LogLevel.INFO,
@@ -47,15 +39,12 @@ export async function convertCommand(options: ConvertOptions) {
   console.log(chalk.blue(`\nStarting conversion in: ${projectPath}\n`));
 
   try {
-    // Load config
-    const configPath = path.join(projectPath, '.transpec', 'config.yaml');
     let sourceFramework = options.source;
     let targetFramework = options.target;
     let mode = options.mode;
 
     try {
-      const configContent = await fs.readFile(configPath, 'utf-8');
-      const config: Config = parseYaml(configContent);
+      const config = await loadProjectConfig(projectPath);
 
       if (!sourceFramework && config.project?.sourceFramework) {
         sourceFramework = config.project.sourceFramework;
@@ -91,8 +80,8 @@ export async function convertCommand(options: ConvertOptions) {
     console.log();
 
     // Get adapters
-    const sourceAdapter = frameworkRegistry.get(sourceFramework as any);
-    const targetAdapter = frameworkRegistry.get(targetFramework as any);
+    const sourceAdapter = frameworkRegistry.get(sourceFramework as FrameworkType);
+    const targetAdapter = frameworkRegistry.get(targetFramework as FrameworkType);
 
     if (!sourceAdapter) {
       console.error(chalk.red(`Source framework '${sourceFramework}' not supported.`));
@@ -107,9 +96,13 @@ export async function convertCommand(options: ConvertOptions) {
     }
 
     // Create IR storage
-    const irPath = path.join(projectPath, '.transpec', 'ir');
+    const irPath = getProjectIrDir(projectPath);
     await fs.mkdir(irPath, { recursive: true });
-    const dbPath = path.join(irPath, `conversion-${Date.now()}.db`);
+    const dbPath = options.dryRun
+      ? path.join(await fs.mkdtemp(path.join(os.tmpdir(), 'transpec-ir-')), 'conversion.db')
+      : getProjectIrDbPath(projectPath);
+
+    await fs.rm(dbPath, { force: true });
     logger.debug('IR storage created', { path: dbPath });
 
     // Run conversion engine
@@ -124,12 +117,12 @@ export async function convertCommand(options: ConvertOptions) {
 
     await engine.initialize();
 
-    console.log(chalk.bold('Running conversion pipeline...\n'));
+    console.log(chalk.bold('Generating RAW IR (parse-only)...\n'));
 
-    const result = await engine.run();
+    const result = await engine.runParseOnly();
 
     // Display results
-    console.log(chalk.bold('\nConversion Results:'));
+    console.log(chalk.bold('\nRAW IR Results:'));
     console.log(`  Status: ${result.success ? chalk.green('SUCCESS') : chalk.red('FAILED')}`);
     console.log(`  Entities processed: ${result.entitiesProcessed}`);
 
@@ -142,16 +135,17 @@ export async function convertCommand(options: ConvertOptions) {
     }
 
     if (!result.success) {
-      console.log(chalk.red('\nConversion completed with errors.\n'));
+      console.log(chalk.red('\nRAW IR generation completed with errors.\n'));
       logger.error('Conversion failed', { issues: result.issues });
       process.exit(1);
     }
 
     if (options.dryRun) {
-      console.log(chalk.yellow('\nDry run complete - no files were written.\n'));
+      console.log(chalk.yellow('\nDry run complete - IR was not persisted.\n'));
       logger.info('Dry run completed', { entitiesProcessed: result.entitiesProcessed });
+      await fs.rm(path.dirname(dbPath), { recursive: true, force: true });
     } else {
-      console.log(chalk.green('\nConversion complete!\n'));
+      console.log(chalk.green('\nRAW IR generation complete!\n'));
       logger.info('Conversion successful', {
         conversionId: result.conversionId,
         entitiesProcessed: result.entitiesProcessed,

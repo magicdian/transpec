@@ -1,0 +1,9 @@
+{"file": ".opencode/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".opencode/commands/trellis/check-backend.md", "reason": "Backend check spec"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Verify runtime vs built-in directory separation"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Verify CLI failures remain user-friendly"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Verify structured logging on new paths"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Verify strict typing and API consistency"}
+{"file": ".trellis/spec/backend/testing-guidelines.md", "reason": "Verify regression coverage for init/workflow changes"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Review config-to-command-to-skill data flow"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Review shared utilities instead of duplicated adapter text/path logic"}

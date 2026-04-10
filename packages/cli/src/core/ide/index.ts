@@ -34,7 +34,17 @@ export interface IdeAdapter {
    * Configure this IDE for use with transpec
    * @param projectPath - Root path of the project
    */
-  configure(projectPath: string): Promise<void>;
+  configure(projectPath: string, options: IdeSetupOptions): Promise<void>;
+}
+
+export interface IdeSetupOptions {
+  sourceFramework: string;
+  targetFramework: string;
+  preprocessSkillPath: string;
+  postprocessSkillPath: string;
+  preprocessContextPath: string;
+  enhancedAnalysisPath: string;
+  postprocessContextPath: string;
 }
 
 /**

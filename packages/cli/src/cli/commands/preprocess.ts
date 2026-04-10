@@ -1,28 +1,24 @@
 /**
- * transpec-preprocess command - AI-powered semantic analysis
+ * transpec preprocess command - deterministic RAW IR preparation
  *
- * This command performs LLM analysis on RAW IR entities:
- * 0. Run transpec convert (Parse phase) if needed
- * 1. Load entities from IR storage
- * 2. Load framework-specific preprocess skills
- * 3. Execute skills to extract enhanced analysis
- * 4. Update entities with enhancedAnalysis metadata
- * 5. Mark IRMetadata.aiPreProcessed = true
- *
- * Usage: transpec preprocess [--project-path <path>]
+ * This command prepares the project for agent-driven preprocess skills:
+ * 1. Generate or refresh RAW IR deterministically
+ * 2. Export preprocess context into .transpec/workspace/
+ * 3. Leave semantic enhancement to the agent command layer
  */
 
 import chalk from 'chalk';
-import * as path from 'path';
 import * as fs from 'fs/promises';
-import { fileURLToPath } from 'url';
-import { SkillExecutor } from '../../core/skill/skill.js';
-import { SQLiteStorage } from '../../core/storage/sqlite.js';
-import { EnhancedAnalysis, ProjectSummary } from '../../core/ir/types.js';
-import { Logger, LogLevel, LogModules, getLogger } from '../../core/logging/index.js';
-import { frameworkRegistry } from '../../core/framework/index.js';
 import { ConversionEngine } from '../../core/engine/engine.js';
-import { parseYaml } from '../utils/yaml.js';
+import { SQLiteStorage } from '../../core/storage/sqlite.js';
+import { Logger, LogLevel, LogModules, getLogger } from '../../core/logging/index.js';
+import {
+  getProjectEnhancedAnalysisPath,
+  getProjectFrameworkSkillPath,
+  getProjectIrDbPath,
+  writePreprocessContext,
+} from '../../core/skill/index.js';
+import { loadProjectConfig } from '../utils/project-config.js';
 
 const logger = getLogger(LogModules.CLI);
 
@@ -33,34 +29,33 @@ export interface PreprocessOptions {
   skipConvert?: boolean;
 }
 
-interface Config {
-  project?: {
-    sourceFramework?: string;
-    targetFramework?: string;
-    mode?: string;
-  };
-}
+async function runRawIrGeneration(
+  projectPath: string,
+  sourceFramework: string,
+  targetFramework: string,
+): Promise<void> {
+  const dbPath = getProjectIrDbPath(projectPath);
+  await fs.rm(dbPath, { force: true });
 
-/**
- * Get the built-in skills directory
- * Skill files are in .transpec/skills/ (copied to dist during build)
- */
-function getBuiltInSkillsDir(): string {
-  const currentFile = fileURLToPath(import.meta.url);
-  const currentDir = path.dirname(currentFile);
-  // From dist/cli/commands/preprocess.js:
-  // - 1 level up = dist/cli/commands
-  // - 2 levels up = dist/cli
-  // - 3 levels up = dist
-  // - 4 levels up = packages/cli (package root)
-  // Built-in skills are in .transpec/skills/
-  const packageRoot = path.resolve(currentDir, '..', '..', '..', '..');
-  return path.join(packageRoot, '.transpec', 'skills');
+  const engine = new ConversionEngine({
+    sourceFramework,
+    targetFramework,
+    projectPath,
+    outputPath: projectPath,
+    mode: 'on-demand',
+    dryRun: false,
+  }, dbPath);
+
+  await engine.initialize();
+  const result = await engine.runParseOnly();
+
+  if (!result.success) {
+    throw new Error(`RAW IR generation failed: ${result.issues.map(issue => issue.message).join('; ')}`);
+  }
 }
 
 export async function preprocessCommand(options: PreprocessOptions): Promise<void> {
   const projectPath = options.projectPath || process.cwd();
-  const skillsDir = getBuiltInSkillsDir();
 
   Logger.configure({
     level: options.verbose ? LogLevel.DEBUG : LogLevel.INFO,
@@ -71,281 +66,64 @@ export async function preprocessCommand(options: PreprocessOptions): Promise<voi
   console.log(chalk.gray(`Project: ${chalk.cyan(projectPath)}\n`));
 
   try {
-    // Step 0: Run convert if needed (Parse phase only)
-    if (!options.skipConvert) {
-      await runConvert(projectPath);
-    }
+    const config = await loadProjectConfig(projectPath);
+    const sourceFramework = config.project?.sourceFramework;
+    const targetFramework = config.project?.targetFramework;
 
-    // Step 1: Load IR storage
-    console.log(chalk.bold('Step 1: Loading IR entities...'));
-    const dbPath = path.join(projectPath, '.transpec', 'ir', 'conversion.db');
-    const storage = new SQLiteStorage(dbPath);
-    const entities = storage.loadAllEntities();
-    const relations = storage.loadRelations();
-
-    console.log(chalk.gray(`Loaded ${entities.length} entities, ${relations.length} relations\n`));
-
-    if (entities.length === 0) {
-      console.log(chalk.yellow('No entities found. Run "transpec convert" first.\n'));
+    if (!sourceFramework || !targetFramework) {
+      console.log(chalk.red('✗ Missing framework configuration. Run "transpec init" first.\n'));
       return;
     }
 
-    // Step 2: Initialize skill executor
-    console.log(chalk.bold('Step 2: Loading preprocess skills...'));
-    const executor = new SkillExecutor(skillsDir);
-    await executor.initialize();
-
-    const availableSkills = executor.getAll();
-    console.log(chalk.gray(`Found ${availableSkills.length} skills\n`));
-
-    // Step 3: Execute enhanced analysis
-    console.log(chalk.bold('Step 3: Extracting enhanced analysis...\n'));
-
-    // Build context for skills
-    const skillContext = {
-      entities: entities.map(e => ({
-        id: e.id,
-        name: e.name,
-        type: e.extendedType,
-        content: e.content,
-      })),
-      relations: relations.map(r => ({
-        sourceId: r.sourceId,
-        targetId: r.targetId,
-        type: r.relationType,
-      })),
-    };
-
-    // Execute each available preprocess skill
-    const skillResults: Map<string, unknown> = new Map();
-
-    for (const skill of availableSkills) {
-      if (skill.name.includes('preprocess')) {
-        console.log(chalk.gray(`  Executing: ${skill.name}...`));
-        const result = await executor.execute(skill.name, skillContext);
-
-        if (result.success) {
-          skillResults.set(skill.name, result.annotations);
-          console.log(chalk.green(`    ✓ ${skill.name} completed`));
-        } else {
-          console.log(chalk.red(`    ✗ ${skill.name} failed: ${result.errors?.join(', ')}`));
-        }
-      }
+    if (!options.skipConvert) {
+      console.log(chalk.bold('Step 1: Generating RAW IR...'));
+      await runRawIrGeneration(projectPath, sourceFramework, targetFramework);
+      console.log(chalk.green('  ✓ RAW IR refreshed\n'));
+    } else {
+      console.log(chalk.bold('Step 1: Reusing existing RAW IR...'));
+      console.log(chalk.gray('  Skipped RAW IR refresh due to --skip-convert\n'));
     }
 
-    // Step 4: Apply enhanced analysis to entities
-    console.log(chalk.bold('\nStep 4: Applying enhanced analysis to entities...'));
-
-    let analyzedCount = 0;
-    for (const entity of entities) {
-      // Simulate enhanced analysis extraction
-      // In production, this would merge results from skill execution
-      const enhancedAnalysis = extractEnhancedAnalysis(entity);
-
-      entity.metadata = {
-        ...entity.metadata,
-        enhancedAnalysis,
-      };
-
-      analyzedCount++;
-    }
-
-    // Save updated entities
-    storage.saveEntities(entities);
-    console.log(chalk.gray(`Updated ${analyzedCount} entities with enhanced analysis\n`));
-
-    // Step 5: Generate project summary
-    console.log(chalk.bold('Step 5: Generating project summary...'));
-    const projectSummary = generateProjectSummary(entities.map(e => ({
-      content: e.content,
-      metadata: e.metadata,
-    })));
-    console.log(chalk.gray(`Architecture: ${projectSummary.overallArchitecture}\n`));
-
-    // Step 6: Update IR metadata
-    console.log(chalk.bold('Step 6: Updating IR metadata...'));
-    // Note: In a full implementation, we would update the IR document metadata
-    // storage.updateMetadata({ aiPreProcessed: true, preprocessedAt: ..., projectSummary });
-
-    console.log(chalk.green.bold('\n✓ Preprocess completed successfully!\n'));
-
-    console.log(chalk.bold('Summary:'));
-    console.log(`  Entities analyzed: ${chalk.cyan(analyzedCount)}`);
-    console.log(`  Skills executed: ${chalk.cyan(skillResults.size)}`);
-    console.log(`  Project summary: ${chalk.cyan(projectSummary.overallArchitecture)}\n`);
-
+    console.log(chalk.bold('Step 2: Loading IR entities...'));
+    const dbPath = getProjectIrDbPath(projectPath);
+    const storage = new SQLiteStorage(dbPath);
+    const entities = storage.loadAllEntities();
+    const relations = storage.loadRelations();
     storage.close();
+
+    if (entities.length === 0) {
+      console.log(chalk.red('✗ No entities found in RAW IR. Run "transpec preprocess" without --skip-convert first.\n'));
+      return;
+    }
+
+    console.log(chalk.gray(`  Loaded ${entities.length} entities, ${relations.length} relations\n`));
+
+    if (options.force) {
+      await fs.rm(getProjectEnhancedAnalysisPath(projectPath), { force: true });
+    }
+
+    console.log(chalk.bold('Step 3: Writing preprocess context...'));
+    const preprocessContextPath = await writePreprocessContext(
+      projectPath,
+      sourceFramework,
+      targetFramework,
+      entities,
+      relations,
+    );
+    console.log(chalk.gray(`  Context: ${preprocessContextPath}`));
+
+    const preprocessSkillPath = getProjectFrameworkSkillPath(projectPath, 'preprocess', sourceFramework);
+    const enhancedAnalysisPath = getProjectEnhancedAnalysisPath(projectPath);
+
+    console.log(chalk.green.bold('\n✓ Preprocess plumbing completed successfully!\n'));
+    console.log(chalk.bold('Next Agent Step:'));
+    console.log(`  1. Read ${chalk.cyan(preprocessSkillPath)}`);
+    console.log(`  2. Read ${chalk.cyan(preprocessContextPath)}`);
+    console.log(`  3. Write enhanced analysis JSON to ${chalk.cyan(enhancedAnalysisPath)}\n`);
 
   } catch (error) {
     logger.error('Preprocess failed', { error: (error as Error).message });
     console.log(chalk.red(`\n✗ Preprocess failed: ${(error as Error).message}\n`));
     throw error;
-  }
-}
-
-/**
- * Extract enhanced analysis from an entity
- * In production, this would merge results from skill execution
- */
-function extractEnhancedAnalysis(entity: { id: string; name: string; content: string; metadata: Record<string, unknown> }): EnhancedAnalysis {
-  // Simple extraction logic - in production, this would use LLM results
-  const content = entity.content;
-
-  // Extract intent from first heading or description
-  const headingMatch = content.match(/^#+\s+(.+)$/m);
-  const intent = headingMatch ? headingMatch[1] : `Analysis of ${entity.name}`;
-
-  // Extract key points from headers
-  const headers = content.match(/^#+\s+(.+)$/gm) || [];
-  const keyPoints = headers.slice(0, 5).map(h => h.replace(/^#+\s+/, ''));
-
-  // Extract dependencies from @mentions
-  const mentions = content.match(/@[\w-]+/g) || [];
-  const dependencies = [...new Set(mentions.map(m => m.slice(1)))];
-
-  // Extract constraints
-  const constraints: string[] = [];
-  const constraintPatterns = [
-    /must not\s+([^.]+)/gi,
-    /cannot\s+([^.]+)/gi,
-    /limited to\s+([^.]+)/gi,
-  ];
-  for (const pattern of constraintPatterns) {
-    const matches = content.match(pattern) || [];
-    constraints.push(...matches.map(m => m.trim()));
-  }
-
-  // Extract requirements
-  const reqMatches = content.match(/(?:requirement|shall|must have)[^.]*\.?/gi) || [];
-  const requirement = reqMatches.slice(0, 5).map(r => r.trim());
-
-  // Extract design decisions
-  const designMatches = content.match(/(?:design|architecture|approach)[^.]*\.?/gi) || [];
-  const design = designMatches.slice(0, 5).map(d => d.trim());
-
-  // Extract implementation notes
-  const noteMatches = content.match(/(?:TODO|FIXME|NOTE)[^:]*(?::\s*)?([^.]+)/gi) || [];
-  const implementNote = [...new Set(noteMatches.map(n => n.trim()))].slice(0, 5);
-
-  return {
-    intent,
-    keyPoints,
-    dependencies,
-    constraints: [...new Set(constraints)].slice(0, 5),
-    requirement,
-    design,
-    implementNote,
-  };
-}
-
-/**
- * Generate project-level summary from entities
- */
-function generateProjectSummary(entities: { content: string; metadata: Record<string, unknown> }[]): ProjectSummary {
-  // Extract types from metadata if available
-  const types = new Set(
-    entities
-      .map(e => e.metadata?.extendedType as string | undefined)
-      .filter((t): t is string => typeof t === 'string')
-  );
-
-  const architecture = types.size > 0
-    ? `${entities.length} entities (${Array.from(types).join(', ')})`
-    : `${entities.length} entities`;
-
-  return {
-    overallArchitecture: architecture,
-    keyRequirements: extractGlobalKeyPoints(entities, 'requirement'),
-    designDecisions: extractGlobalKeyPoints(entities, 'design'),
-    developmentGuidelines: 'See individual entity enhancedAnalysis for details',
-  };
-}
-
-/**
- * Extract a specific type of key points from all entities
- */
-function extractGlobalKeyPoints(
-  entities: { content: string; metadata: Record<string, unknown> }[],
-  type: 'requirement' | 'design'
-): string[] {
-  const points: string[] = [];
-  const pattern = new RegExp(`${type}:\\s*([^\\n]+)`, 'gi');
-
-  for (const entity of entities) {
-    const enhanced = entity.metadata?.enhancedAnalysis as EnhancedAnalysis | undefined;
-    if (enhanced?.[type]) {
-      points.push(...enhanced[type]);
-    } else {
-      // Fallback: extract from content
-      const matches = entity.content.match(pattern) || [];
-      for (const match of matches) {
-        const value = match.replace(`${type}:`, '').trim();
-        if (value && !points.includes(value)) {
-          points.push(value);
-        }
-      }
-    }
-  }
-
-  return [...new Set(points)].slice(0, 10);
-}
-
-/**
- * Run convert command internally (Parse phase only)
- */
-async function runConvert(projectPath: string): Promise<void> {
-  console.log(chalk.bold('Step 0: Running conversion (Parse phase)...'));
-
-  // Load config
-  const configPath = path.join(projectPath, '.transpec', 'config.yaml');
-
-  try {
-    const configContent = await fs.readFile(configPath, 'utf-8');
-    const config: Config = parseYaml(configContent);
-
-    const sourceFramework = config.project?.sourceFramework;
-    const targetFramework = config.project?.targetFramework;
-
-    if (!sourceFramework || !targetFramework) {
-      console.log(chalk.yellow('  No config found, skipping convert step.\n'));
-      return;
-    }
-
-    // Get adapters
-    const sourceAdapter = frameworkRegistry.get(sourceFramework as any);
-    const targetAdapter = frameworkRegistry.get(targetFramework as any);
-
-    if (!sourceAdapter || !targetAdapter) {
-      console.log(chalk.yellow('  Invalid adapters in config, skipping convert.\n'));
-      return;
-    }
-
-    // Create IR storage
-    const irPath = path.join(projectPath, '.transpec', 'ir');
-    await fs.mkdir(irPath, { recursive: true });
-    const dbPath = path.join(irPath, 'conversion.db');
-
-    // Run conversion engine in on-demand mode (Parse only)
-    const engine = new ConversionEngine({
-      sourceFramework,
-      targetFramework,
-      projectPath,
-      outputPath: projectPath,
-      mode: 'on-demand',
-      dryRun: false,
-    }, dbPath);
-
-    await engine.initialize();
-    const result = await engine.run();
-
-    if (result.success) {
-      console.log(chalk.green(`  ✓ Convert completed (${result.entitiesProcessed} entities)\n`));
-    } else {
-      console.log(chalk.yellow(`  ! Convert completed with issues\n`));
-    }
-
-  } catch (error) {
-    // If no config or conversion fails, just skip
-    console.log(chalk.gray(`  Skipping convert: ${(error as Error).message}\n`));
   }
 }

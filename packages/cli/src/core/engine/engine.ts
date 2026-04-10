@@ -13,7 +13,7 @@
 import { LogModules, getLogger } from '../logging/index.js';
 import { SQLiteStorage } from '../storage/sqlite.js';
 import { FrameworkAdapter, FrameworkRegistry } from '../framework/index.js';
-import { CoreEntity, CoreRelation, ConversionResult, EnhancedAnalysis, IRMetadata, PreprocessState, ValidationIssue } from '../ir/types.js';
+import { CoreEntity, CoreRelation, ConversionResult, EnhancedAnalysis, IRMetadata, PreprocessState, ValidationIssue, FrameworkType } from '../ir/types.js';
 import { BatchProcessor } from './batch-processor.js';
 
 const logger = getLogger(LogModules.ENGINE);
@@ -68,8 +68,8 @@ export class ConversionEngine {
     });
 
     const registry = new FrameworkRegistry();
-    this.sourceAdapter = registry.get(this.options.sourceFramework as any);
-    this.targetAdapter = registry.get(this.options.targetFramework as any);
+    this.sourceAdapter = registry.get(this.options.sourceFramework as FrameworkType);
+    this.targetAdapter = registry.get(this.options.targetFramework as FrameworkType);
 
     if (!this.sourceAdapter) {
       throw new Error(`Source framework '${this.options.sourceFramework}' not supported`);
@@ -150,6 +150,32 @@ export class ConversionEngine {
 
     } catch (error) {
       logger.error('Conversion failed', { error: (error as Error).message });
+      return {
+        success: false,
+        conversionId: `conv-${Date.now()}`,
+        entitiesProcessed: this.entities.length,
+        issues: [{ type: 'error', message: (error as Error).message }],
+      };
+    } finally {
+      this.storage.close();
+    }
+  }
+
+  async runParseOnly(): Promise<ConversionResult> {
+    try {
+      logger.info(`[${ConversionPhase.PARSE}] Starting parse-only execution`);
+      const parseResult = await this.runParsePhase();
+      this.phaseResults.push(parseResult);
+
+      return {
+        success: parseResult.success,
+        conversionId: `conv-${Date.now()}`,
+        entitiesProcessed: this.entities.length,
+        issues: parseResult.issues,
+        outputPath: this.options.outputPath,
+      };
+    } catch (error) {
+      logger.error('Parse-only execution failed', { error: (error as Error).message });
       return {
         success: false,
         conversionId: `conv-${Date.now()}`,

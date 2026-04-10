@@ -331,66 +331,308 @@ The CLI commands orchestrate engine phases and skills differently:
 
 | Command | What it does |
 |---------|--------------|
-| `transpec convert` | Run engine.run() - all 6 phases |
-| `transpec preprocess` | Parse phase + execute preprocess skills |
-| `transpec apply` | Transform+Emit phases + guide post-migration skills |
+| `transpec convert` | Internal/debug command for deterministic PARSE → RAW IR only |
+| `transpec preprocess` | Deterministic RAW IR preparation + preprocess context export |
+| `transpec apply` | Import enhanced analysis file + Transform/Validate/Emit + postprocess context export |
 
 ### Command Workflow
 
 ```
 transpec preprocess:
-  ├── Step 0: Run convert (Parse phase only, via engine.run())
-  ├── Step 1: Load entities from IR storage
-  ├── Step 2: Load preprocess skills
-  ├── Step 3: Extract enhancedAnalysis (simulated)
-  └── Output: Entities with enhancedAnalysis metadata
+  ├── Step 1: Generate or refresh RAW IR (Parse phase only)
+  ├── Step 2: Load entities from IR storage
+  ├── Step 3: Export .transpec/workspace/preprocess-context.json
+  └── Output: Agent-ready preprocess context + project-local preprocess skill path
 
 transpec apply (target=trellis):
-  ├── Step 4: Run Transform+Emit (via engine.runTransformEmit())
-  ├── Step 5: List post-migration skills for Trellis (generate-trellis-specs)
-  └── Output: Guided next step for agent
+  ├── Step 1: Import .transpec/workspace/enhanced-analysis.json into RAW IR metadata
+  ├── Step 2: Run Transform+Emit (via engine.runTransformEmit())
+  ├── Step 3: Export .transpec/workspace/postprocess-context.json
+  └── Output: Guided next step for agent postprocess
 
 transpec apply (target=other):
-  └── Output: Transform+Emit only
+  └── Output: Transform+Emit + target-specific postprocess context when available
 ```
 
 ### Skills vs CLI
 
-**Transpec CLI does NOT execute skills** - it lists available skills and guides agents to execute them.
+**Transpec CLI does NOT execute preprocess/postprocess skills** - agent commands execute them using project-local markdown copied into `.transpec/skills/`.
 
 ```typescript
-// CLI lists skills, does NOT execute
-const skills = executor.getByTrigger('post-migration');
-for (const skill of skills) {
-  console.log(`Found skill: ${skill.name}`);
-  console.log(`Read .transpec/skills/${skill.name}/SKILL.md to execute`);
-}
-
-// Agent reads and executes the skill
+// CLI writes deterministic runtime context
+// Agent command reads:
+//   .transpec/skills/preprocess/<source>/SKILL.md
+//   .transpec/skills/postprocess/<target>/SKILL.md
+//   .transpec/workspace/*.json
 ```
 
 **Skill triggers**:
-- `preprocess`: Run before transform phase (analyzes source content)
-- `post-migration`: Run after emit phase (generates target-specific artifacts)
+- `preprocess`: Agent-side semantic enrichment after RAW IR exists
+- `postprocess`: Agent-side target-specific work after deterministic emit completes
 
-### Example: generate-trellis-specs
+### Example: trellis postprocess
 
-This skill has `trigger: post-migration` and is Trellis-specific:
+This skill is Trellis-specific and is copied into `.transpec/skills/postprocess/trellis/SKILL.md` during `transpec init`:
 
-1. CLI (`transpec apply`) lists it in Step 5 (only for Trellis target)
-2. Agent reads `.transpec/skills/generate-trellis-specs/SKILL.md`
-3. Agent analyzes project code to generate `spec/backend/`, `spec/frontend/`, `spec/guides/`
+1. CLI (`transpec apply`) writes `.transpec/workspace/postprocess-context.json`
+2. Agent reads `.transpec/skills/postprocess/trellis/SKILL.md`
+3. Agent analyzes project code to generate `.trellis/spec/backend/`, `.trellis/spec/frontend/`, `.trellis/spec/guides/`
 
 ```typescript
-// In apply.ts - only for Trellis target
-if (targetFramework === 'trellis') {
-  const skills = executor.getByTrigger('post-migration');
-  for (const skill of skills) {
-    console.log(`Found Trellis skill: ${skill.name}`);
-  }
-  console.log('Read .transpec/skills/generate-trellis-specs/SKILL.md');
+// In apply.ts
+// 1. Merge .transpec/workspace/enhanced-analysis.json into entity metadata
+// 2. Run engine.runTransformEmit()
+// 3. Write .transpec/workspace/postprocess-context.json
+```
+
+## Scenario: Agent-Driven Preprocess and Apply Runtime Contract
+
+### 1. Scope / Trigger
+
+- Trigger: Any change to `transpec init`, `transpec preprocess`, `transpec apply`, project-local skill materialization, or agent command generation.
+- Why this requires code-spec depth:
+  - The workflow crosses CLI commands, generated agent command assets, package-bundled skill assets, and project-local runtime files.
+  - A path or payload mismatch at any boundary breaks the end-to-end flow even if individual commands still compile.
+
+### 2. Signatures
+
+CLI command signatures:
+
+```bash
+transpec init [--source <framework>] [--target <framework>] [--ide <ide>] [--mode <mode>] [--yes]
+transpec preprocess [--project-path <path>] [--skip-convert] [--force]
+transpec apply [--project-path <path>] [--force]
+transpec convert [--project-path <path>] [--source <framework>] [--target <framework>] [--dry-run]
+```
+
+Core runtime helpers:
+
+```typescript
+materializeProjectSkills(projectPath, sourceFramework, targetFramework)
+writePreprocessContext(projectPath, sourceFramework, targetFramework, entities, relations)
+loadEnhancedAnalysisFile(projectPath)
+mergeEnhancedAnalysis(entities, analysisFile)
+writePostprocessContext(projectPath, sourceFramework, targetFramework, entitiesTransformed)
+```
+
+Generated agent assets must reference:
+
+```text
+.transpec/skills/preprocess/<source>/SKILL.md
+.transpec/skills/postprocess/<target>/SKILL.md
+.transpec/workspace/preprocess-context.json
+.transpec/workspace/enhanced-analysis.json
+.transpec/workspace/postprocess-context.json
+```
+
+### 3. Contracts
+
+#### 3.1 `.transpec/config.yaml`
+
+Required fields:
+
+```yaml
+project:
+  sourceFramework: <framework>
+  targetFramework: <framework>
+  ide: <primary ide>
+  ides: <comma-separated ide ids>
+  mode: <on-demand|full|sampling>
+skills:
+  preprocess: .transpec/skills/preprocess/<source>/SKILL.md
+  postprocess: .transpec/skills/postprocess/<target>/SKILL.md
+workspace:
+  preprocessContext: .transpec/workspace/preprocess-context.json
+  enhancedAnalysis: .transpec/workspace/enhanced-analysis.json
+  postprocessContext: .transpec/workspace/postprocess-context.json
+```
+
+Rules:
+- `skills.preprocess` and `skills.postprocess` must point to project-local markdown, not package-internal paths.
+- `workspace.*` fields must remain relative to the initialized project root.
+- `project.ide` is the primary/default IDE; `project.ides` records the full selected set for generated assets.
+
+#### 3.2 `.transpec/workspace/preprocess-context.json`
+
+Required shape:
+
+```json
+{
+  "version": "1.0.0",
+  "generatedAt": "ISO-8601 timestamp",
+  "sourceFramework": "openspec",
+  "targetFramework": "trellis",
+  "preprocessSkill": ".transpec/skills/preprocess/openspec/SKILL.md",
+  "enhancedAnalysisOutput": ".transpec/workspace/enhanced-analysis.json",
+  "entityCount": 2,
+  "relationCount": 0,
+  "entities": [
+    {
+      "id": "entity-id",
+      "name": "demo capability",
+      "type": "spec",
+      "sourcePath": "/absolute/path/to/source.md",
+      "hasEnhancedAnalysis": false
+    }
+  ],
+  "relations": []
 }
 ```
+
+Rules:
+- `preprocessSkill` must be the project-relative path to the project-local copied skill.
+- `enhancedAnalysisOutput` is the only supported write target for agent semantic output.
+- `entities[*].sourcePath` is absolute so the agent can inspect source files directly.
+
+#### 3.3 `.transpec/workspace/enhanced-analysis.json`
+
+Required shape:
+
+```json
+{
+  "version": "1.0.0",
+  "generatedAt": "ISO-8601 timestamp",
+  "sourceFramework": "openspec",
+  "targetFramework": "trellis",
+  "entities": {
+    "entity-id": {
+      "intent": "One sentence",
+      "keyPoints": ["Point 1"],
+      "dependencies": ["dependency"],
+      "constraints": ["constraint"],
+      "requirement": ["requirement"],
+      "design": ["design decision"],
+      "implementNote": ["implementation note"]
+    }
+  }
+}
+```
+
+Rules:
+- Top-level `entities` keys must match existing RAW IR entity IDs.
+- Unknown entity IDs are ignored during merge.
+- Missing entity IDs are allowed; they mean "no semantic enrichment for this entity".
+- `apply` merges this file into `entity.metadata.enhancedAnalysis` before transform/emit.
+
+#### 3.4 `.transpec/workspace/postprocess-context.json`
+
+Required shape:
+
+```json
+{
+  "version": "1.0.0",
+  "generatedAt": "ISO-8601 timestamp",
+  "sourceFramework": "openspec",
+  "targetFramework": "trellis",
+  "postprocessSkill": ".transpec/skills/postprocess/trellis/SKILL.md",
+  "enhancedAnalysisInput": ".transpec/workspace/enhanced-analysis.json",
+  "entitiesTransformed": 2,
+  "outputRoot": "."
+}
+```
+
+Rules:
+- `postprocessSkill` must be project-relative and target-specific.
+- `entitiesTransformed` must equal the deterministic apply result count returned by `runTransformEmit()`.
+
+#### 3.5 RAW IR database path
+
+Supported path:
+
+```text
+.transpec/ir/conversion.db
+```
+
+Rules:
+- `preprocess` and `apply` must use the same fixed runtime DB path.
+- `convert --dry-run` may use a temporary DB path, but normal runtime flow must not.
+- Do not create timestamped DB filenames for the normal agent-driven workflow.
+
+### 4. Validation & Error Matrix
+
+| Boundary | Validation | Failure behavior |
+|----------|------------|------------------|
+| `init` → config | `sourceFramework` and `targetFramework` both present and different | Print user-facing error and exit |
+| `init` → project skills | Built-in preprocess/postprocess asset exists for selected framework | If missing, generated config still points to expected runtime path, but this is a release bug and should fail tests |
+| `preprocess` → RAW IR | `.transpec/ir/conversion.db` exists and loads `entities.length > 0` | Print user-facing error and stop |
+| `preprocess` → context export | `preprocess-context.json` written successfully | Throw and fail command |
+| agent → enhanced analysis file | JSON parses and matches expected top-level fields | `apply` treats unreadable file as missing |
+| `apply` → enhanced analysis import | If file missing and no `--force`, stop before transform | Print user-facing warning and return |
+| `apply` → transform/emit | `runTransformEmit()` returns success or issues | Print issues and continue only when engine reports non-fatal warnings |
+| `apply` → postprocess context | `postprocess-context.json` written successfully | Throw and fail command |
+
+### 5. Good/Base/Bad Cases
+
+#### Good
+
+- `transpec init --source openspec --target trellis --ide claude-code --yes`
+- Result:
+  - `.transpec/skills/preprocess/openspec/SKILL.md` exists
+  - `.transpec/skills/postprocess/trellis/SKILL.md` exists
+  - generated Claude command reads those project-local paths
+
+#### Base
+
+- `transpec preprocess` on an initialized project with valid source files but no enhanced analysis yet
+- Result:
+  - `.transpec/ir/conversion.db` exists
+  - `.transpec/workspace/preprocess-context.json` exists
+  - `.transpec/workspace/enhanced-analysis.json` does not need to exist yet
+
+#### Bad
+
+- `transpec apply` before the agent has produced `.transpec/workspace/enhanced-analysis.json`
+- Result:
+  - Without `--force`, command prints a user-facing warning and stops before transform
+  - With `--force`, command may continue with deterministic transform/emit only
+
+### 6. Tests Required
+
+Required regression coverage:
+
+- `materializeProjectSkills()`:
+  - Assert project-local preprocess/postprocess markdown files are copied for selected frameworks.
+- `writePreprocessContext()`:
+  - Assert `preprocessSkill` and `enhancedAnalysisOutput` are project-relative `.transpec/...` paths.
+- `loadEnhancedAnalysisFile()` + `mergeEnhancedAnalysis()`:
+  - Assert matched entity IDs update `metadata.enhancedAnalysis`.
+  - Assert unmatched IDs do not break the merge.
+- IDE adapters:
+  - Assert generated preprocess/apply commands or skills mention only project-local `.transpec/...` paths.
+  - Assert they do not depend on `packages/cli/.transpec` or `dist/.transpec`.
+- Smoke flow:
+  - Assert `init -> preprocess -> apply` succeeds in a temp project.
+  - Assert `.transpec/ir/conversion.db`, preprocess context, enhanced analysis file, and postprocess context all exist at the expected points.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```text
+1. Package ships markdown in dist/.transpec/skills/...
+2. Generated agent commands read markdown from the installed package path
+3. preprocess writes RAW IR to conversion-<timestamp>.db
+4. apply reads from .transpec/ir/conversion.db
+```
+
+Why this is wrong:
+- Agent behavior now depends on installation layout instead of project runtime state.
+- The runtime DB path is inconsistent across commands.
+- End-to-end flow breaks even when each individual command appears valid.
+
+#### Correct
+
+```text
+1. Package bundles built-in assets under dist/core/skill/preprocess-skills/ and postprocess-skills/
+2. transpec init copies the selected assets into .transpec/skills/preprocess/<source>/ and postprocess/<target>/
+3. Generated agent commands read only project-local .transpec markdown and workspace JSON files
+4. preprocess and apply both use .transpec/ir/conversion.db for the normal runtime flow
+```
+
+Why this is correct:
+- The project runtime directory is the single source of truth for the initialized workflow.
+- Agent prompts stay stable regardless of package installation structure.
+- Deterministic CLI plumbing and agent-driven semantic/postprocess work are cleanly separated.
 
 ---
 

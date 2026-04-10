@@ -11,6 +11,7 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { getLogger, LogModules } from '../logging/index.js';
+import { getBuiltInSkillCategoryDir } from './paths.js';
 
 const logger = getLogger(LogModules.AI);
 
@@ -57,8 +58,7 @@ export class SkillLoader {
   }
 
   private getDefaultSkillsDir(): string {
-    // In production, this would be relative to the installed package
-    return path.join(process.cwd(), '.transpec', 'skills');
+    return getBuiltInSkillCategoryDir('preprocess');
   }
 
   async loadAll(): Promise<void> {

@@ -52,11 +52,10 @@ packages/cli/
 │   │   └── skill/               # Skill system
 │   │       ├── index.ts
 │   │       ├── skill.ts
-│   │       └── skills/           # Built-in skill definitions (compiled to dist)
-│   │           ├── analyze-semantics/
-│   │           ├── framework-mapper/
-│   │           ├── openspec-preprocess/
-│   │           └── trellis-preprocess/
+│   │       ├── agent-commands/   # Shared agent-command templates/content builders
+│   │       ├── preprocess-skills/# Source-framework preprocess skill assets
+│   │       ├── postprocess-skills/# Target-framework postprocess skill assets
+│   │       └── project-runtime.ts# Project-local .transpec skill/context generation helpers
 │   │
 │   └── ide/                    # IDE integration (future)
 │
@@ -179,62 +178,48 @@ If you're adding a feature, ask: "Is this CLI logic or core logic?" and place ac
 |-----------|--------|--------------|
 | `.transpec/` | Root runtime directory | User project |
 | `.transpec/ir/` | SQLite database for IR storage | Runtime generated |
-| `.transpec/skills/` | User's custom skills | User project |
+| `.transpec/skills/` | Project-local generated runtime skills | User project |
 | `.transpec/config.yaml` | Project configuration | User project |
 
 ### Built-in vs User Skills
 
 | Location | Type | Purpose | Example |
 |----------|------|---------|---------|
-| `packages/cli/src/core/skill/skills/` | **Built-in** | Skills bundled with the package | `openspec-preprocess`, `trellis-preprocess` |
-| `.transpec/skills/` | **User** | User's custom skills for their project | `generate-trellis-specs` |
+| `packages/cli/src/core/skill/preprocess-skills/` | **Built-in** | Source-framework preprocess skill assets bundled with the package | `openspec/`, `trellis/` |
+| `packages/cli/src/core/skill/postprocess-skills/` | **Built-in** | Target-framework postprocess skill assets bundled with the package | `trellis/`, `openspec/` |
+| `.transpec/skills/` | **Runtime generated** | Project-local copies that agent commands actually read | `preprocess/openspec/`, `postprocess/trellis/` |
 
 ### IMPORTANT: Where to Put Skills?
 
-**DO NOT put skill definitions in `.transpec/`** - that directory is for user runtime data only.
+**Built-in skill source files do NOT live in `.transpec/`**.
 
-- **Built-in skills** (shipped with package) → `packages/cli/src/core/skill/skills/<skill-name>/SKILL.md`
-- **User custom skills** (project-specific) → `.transpec/skills/<skill-name>/SKILL.md`
+- **Built-in preprocess skills** → `packages/cli/src/core/skill/preprocess-skills/<framework>/SKILL.md`
+- **Built-in postprocess skills** → `packages/cli/src/core/skill/postprocess-skills/<framework>/SKILL.md`
+- **Project-local generated runtime skills** → `.transpec/skills/<preprocess|postprocess>/<framework>/SKILL.md`
 
 ### Example: Adding a New Built-in Skill
 
 ```bash
 # 1. Create skill directory in source
-mkdir -p packages/cli/src/core/skill/skills/my-new-skill/
+mkdir -p packages/cli/src/core/skill/preprocess-skills/my-framework/
 
 # 2. Add SKILL.md with YAML frontmatter
-cat > packages/cli/src/core/skill/skills/my-new-skill/SKILL.md << 'EOF'
+cat > packages/cli/src/core/skill/preprocess-skills/my-framework/SKILL.md << 'EOF'
 ---
-name: my-new-skill
-description: "Description of what this skill does"
+name: my-framework-preprocess
+description: "Description of what this framework-specific preprocess skill does"
 model: opus
-trigger: semantic-analysis
+trigger: preprocess
 ---
 
 ## Skill content here...
 EOF
 
-# 3. The skill will be loaded from src/ and compiled to dist/
-```
-
-### Example: User Creating Custom Skill
-
-```bash
-# In user's project directory (after running transpec init)
-mkdir -p .transpec/skills/my-custom-skill/
-cat > .transpec/skills/my-custom-skill/SKILL.md << 'EOF'
----
-name: my-custom-skill
-description: "My project-specific analysis"
-trigger: custom-analysis
----
-
-## Custom skill content...
-EOF
+# 3. `transpec init` will copy the relevant built-in asset into `.transpec/skills/preprocess/my-framework/`
 ```
 
 ### Why This Separation?
 
-1. **Built-in skills** are version-controlled with the package and updated via `npm update`
-2. **User skills** are project-specific and persist across package updates
-3. **`.transpec/`** is gitignored, so user skills won't pollute the repository
+1. **Built-in skill assets** are version-controlled with the package and updated via package releases
+2. **Project-local runtime skills** live under `.transpec/skills/` so agent commands can read stable markdown from the project itself
+3. **`.transpec/`** remains the runtime workspace for this specific initialized project

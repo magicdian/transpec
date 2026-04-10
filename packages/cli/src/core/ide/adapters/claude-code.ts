@@ -11,8 +11,9 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { execSync } from 'child_process';
-import { IdeAdapter, isDirectory } from '../index.js';
+import { IdeAdapter, IdeSetupOptions, isDirectory } from '../index.js';
 import { getLogger, LogModules } from '../../logging/index.js';
+import { buildApplyWorkflowBody, buildPreprocessWorkflowBody } from '../../skill/index.js';
 
 const logger = getLogger(LogModules.CLI);
 
@@ -57,7 +58,7 @@ export class ClaudeCodeAdapter implements IdeAdapter {
    * Configure Claude Code for transpec
    * Creates .claude directory with settings, commands, and hooks
    */
-  async configure(projectPath: string): Promise<void> {
+  async configure(projectPath: string, options: IdeSetupOptions): Promise<void> {
     const claudeDir = path.join(projectPath, this.skillsDir);
     const commandsDir = path.join(claudeDir, 'commands', 'transpec');
     const hooksDir = path.join(claudeDir, 'hooks');
@@ -72,10 +73,10 @@ export class ClaudeCodeAdapter implements IdeAdapter {
     await this.generateSettings(claudeDir);
 
     // Generate /transpec:preprocess command
-    await this.generatePreprocessCommand(commandsDir);
+    await this.generatePreprocessCommand(commandsDir, options);
 
     // Generate /transpec:apply command
-    await this.generateApplyCommand(commandsDir);
+    await this.generateApplyCommand(commandsDir, options);
 
     // Generate context injection hook
     await this.generateContextHook(hooksDir);
@@ -98,7 +99,7 @@ export class ClaudeCodeAdapter implements IdeAdapter {
             hooks: [
               {
                 type: 'command',
-                command: `python3 ${this.skillsDir}/hooks/transpec-context.py`,
+                command: `${pythonCmd} ${this.skillsDir}/hooks/transpec-context.py`,
                 timeout: 10
               }
             ]
@@ -110,7 +111,7 @@ export class ClaudeCodeAdapter implements IdeAdapter {
             hooks: [
               {
                 type: 'command',
-                command: `python3 ${this.skillsDir}/hooks/transpec-context.py`,
+                command: `${pythonCmd} ${this.skillsDir}/hooks/transpec-context.py`,
                 timeout: 30
               }
             ]
@@ -120,7 +121,7 @@ export class ClaudeCodeAdapter implements IdeAdapter {
             hooks: [
               {
                 type: 'command',
-                command: `python3 ${this.skillsDir}/hooks/transpec-context.py`,
+                command: `${pythonCmd} ${this.skillsDir}/hooks/transpec-context.py`,
                 timeout: 30
               }
             ]
@@ -137,48 +138,24 @@ export class ClaudeCodeAdapter implements IdeAdapter {
   /**
    * Generate /transpec:preprocess command
    */
-  private async generatePreprocessCommand(commandsDir: string): Promise<void> {
+  private async generatePreprocessCommand(commandsDir: string, options: IdeSetupOptions): Promise<void> {
     const preprocessPath = path.join(commandsDir, 'preprocess.md');
+    const body = buildPreprocessWorkflowBody({
+      preprocessSkillPath: options.preprocessSkillPath,
+      postprocessSkillPath: options.postprocessSkillPath,
+      preprocessContextPath: options.preprocessContextPath,
+      enhancedAnalysisPath: options.enhancedAnalysisPath,
+      postprocessContextPath: options.postprocessContextPath,
+    });
 
     const content = `---
 name: preprocess
-description: Run AI semantic analysis on IR entities (after convert)
+description: Prepare RAW IR and execute source-specific preprocess workflow
 ---
 
 # /transpec:preprocess
 
-Run AI-powered semantic analysis on the Intermediate Representation (IR) entities.
-This step extracts enhanced analysis including intent, key points, dependencies, and constraints.
-
-## Usage
-
-Run this command after \`transpec init\` and before \`transpec apply\`.
-
-## Steps
-
-1. Read the current transpec configuration:
-   \`\`\`bash
-   cat .transpec/config.yaml
-   \`\`\`
-
-2. Review existing IR entities:
-   \`\`\`bash
-   ls -la .transpec/ir/
-   \`\`\`
-
-3. Run the preprocess command:
-   \`\`\`bash
-   transpec preprocess
-   \`\`\`
-
-4. Review the enhanced analysis results in the IR storage
-
-## Notes
-
-- Preprocess runs convert automatically if not yet done
-- Enhanced analysis includes intent, keyPoints, dependencies, constraints
-- Use \`--force\` to re-run even if already preprocessed
-- Use \`--skip-convert\` to skip convert step and only run analysis
+${body}
 `;
 
     await fs.writeFile(preprocessPath, content);
@@ -188,46 +165,24 @@ Run this command after \`transpec init\` and before \`transpec apply\`.
   /**
    * Generate /transpec:apply command
    */
-  private async generateApplyCommand(commandsDir: string): Promise<void> {
+  private async generateApplyCommand(commandsDir: string, options: IdeSetupOptions): Promise<void> {
     const applyPath = path.join(commandsDir, 'apply.md');
+    const body = buildApplyWorkflowBody({
+      preprocessSkillPath: options.preprocessSkillPath,
+      postprocessSkillPath: options.postprocessSkillPath,
+      preprocessContextPath: options.preprocessContextPath,
+      enhancedAnalysisPath: options.enhancedAnalysisPath,
+      postprocessContextPath: options.postprocessContextPath,
+    });
 
     const content = `---
 name: apply
-description: Final transformation - convert IR to target framework (after preprocess)
+description: Apply deterministic transform/emit and run target-specific postprocess workflow
 ---
 
 # /transpec:apply
 
-Final transformation step - converts IR entities with enhanced analysis to target framework.
-
-## Usage
-
-Run this command AFTER \`/transpec:preprocess\`.
-
-## Steps
-
-1. Read the current transpec configuration:
-   \`\`\`bash
-   cat .transpec/config.yaml
-   \`\`\`
-
-2. Review the enhanced analysis in IR storage:
-   \`\`\`bash
-   ls -la .transpec/ir/
-   \`\`\`
-
-3. Run the apply command:
-   \`\`\`bash
-   transpec apply
-   \`\`\`
-
-4. Verify the output in the target framework directory (e.g., \`.trellis/spec/\`)
-
-## Notes
-
-- Apply runs Transform + Emit phases using enhanced analysis from preprocess
-- Use \`--force\` to re-run even if conversion was already done
-- Use \`transpec convert --dry-run\` to preview changes without applying
+${body}
 `;
 
     await fs.writeFile(applyPath, content);

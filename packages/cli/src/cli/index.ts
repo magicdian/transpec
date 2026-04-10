@@ -50,7 +50,7 @@ program
 
 program
   .command('convert')
-  .description('Convert specs from source to target framework')
+  .description('Internal/debug: generate deterministic RAW IR from the source framework')
   .option('-p, --project-path <path>', 'Project path (default: current directory)')
   .option('-s, --source <framework>', 'Source framework')
   .option('-t, --target <framework>', 'Target framework')
@@ -62,7 +62,7 @@ program
 
 program
   .command('apply')
-  .description('Run post-migration skills (called by AI agents after convert)')
+  .description('Deterministic apply plumbing for agent-driven workflow')
   .option('-p, --project-path <path>', 'Project path (default: current directory)')
   .option('-f, --force', 'Force re-run conversion even if already done')
   .option('-v, --verbose', 'Enable verbose logging')
@@ -70,7 +70,7 @@ program
 
 program
   .command('preprocess')
-  .description('Run convert + AI semantic analysis on IR entities')
+  .description('Deterministic RAW IR preparation for agent-driven preprocess workflow')
   .option('-p, --project-path <path>', 'Project path (default: current directory)')
   .option('-s, --skip-convert', 'Skip convert step (use existing IR)')
   .option('-f, --force', 'Force re-run even if already preprocessed')
