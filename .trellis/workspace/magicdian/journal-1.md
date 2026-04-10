@@ -414,3 +414,35 @@ Extended transpec CLI to support multiple AI coding IDEs. Implemented CursorAdap
 ### Next Steps
 
 - None - task complete
+
+
+## Session 13: Align agent-driven Transpec workflow
+
+**Date**: 2026-04-10
+**Task**: Align agent-driven Transpec workflow
+
+### Summary
+
+Refactored Transpec into init -> agent preprocess -> agent apply, moved built-in skill assets into package-managed preprocess/postprocess directories, generated project-local runtime skills under .transpec, aligned Claude/Cursor/Codex/OpenCode commands, added runtime contract tests and smoke-tested the new flow in tmp/transpec-smoke.
+
+### Main Changes
+
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ccb5362` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
