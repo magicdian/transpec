@@ -414,6 +414,118 @@ npm run test:ci
 
 ---
 
+## Scenario: Compatibility Matrix Fixtures
+
+### 1. Scope / Trigger
+- Trigger: Adapter or command changes are meant to stay compatible with both legacy and current upstream framework layouts.
+- Trigger: A submodule update changes markdown shape, monorepo spec layout, or task runtime metadata without changing the high-level conversion flow.
+
+### 2. Signatures
+
+Shared fixture helpers:
+
+```typescript
+// packages/cli/src/test/compat-fixtures.ts
+export type FrameworkVariant = 'legacy' | 'current';
+
+export async function createOpenSpecProject(
+  projectPath: string,
+  variant: FrameworkVariant,
+): Promise<void>;
+
+export async function createTrellisProject(
+  projectPath: string,
+  variant: FrameworkVariant,
+): Promise<void>;
+
+export async function setupTranspecConfig(
+  projectPath: string,
+  sourceFramework: 'openspec' | 'trellis',
+  targetFramework: 'openspec' | 'trellis',
+): Promise<void>;
+
+export async function seedEnhancedAnalysis(projectPath: string): Promise<void>;
+```
+
+Smoke coverage entry point:
+
+```typescript
+// packages/cli/src/cli/commands/runtime-compat.test.ts
+await convertCommand({ projectPath, source, target, dryRun: true });
+await preprocessCommand({ projectPath });
+await applyCommand({ projectPath });
+```
+
+### 3. Contracts
+- Compatibility fixtures must model both `legacy` and `current` project shapes for each supported framework.
+- `current` OpenSpec fixtures should include compact H3 headings and fenced-code examples that resemble requirement headers.
+- `current` Trellis fixtures should include package-scoped spec directories (`.trellis/spec/<package>/<layer>/...`) and modern `task.json` lifecycle fields (`current_phase`, `next_action`, `children`, `parent`).
+- Command-level smoke tests must verify `.transpec/workspace/*.json`, `.transpec/ir/conversion.db`, and representative output files after `apply`.
+
+### 4. Validation & Error Matrix
+
+| Layer | Validation | Failure behavior |
+|------|------------|------------------|
+| Fixture helper | Legacy/current project skeletons build successfully in temp dirs | Test setup fails before real compatibility behavior is exercised |
+| Adapter regression | `parseAll()` returns equivalent entity classes for legacy/current variants | Format drift is caught only in production projects |
+| Runtime smoke flow | `convert`, `preprocess`, `apply` complete and write expected runtime artifacts | Adapter tests pass but CLI plumbing regresses |
+| Output assertions | Representative target files exist after `apply` | Transform/emit breakage hides behind green parse-only tests |
+
+### 5. Good/Base/Bad Cases
+
+#### Good
+- One shared helper creates current Trellis fixtures with package-scoped specs; both adapter tests and command smoke tests reuse it.
+- Runtime compatibility test verifies `dryRun` leaves no persisted DB, then normal preprocess/apply creates the expected DB and context files.
+
+#### Base
+- Legacy OpenSpec and legacy Trellis fixtures still run through the same helper layer with only variant-specific content changes.
+
+#### Bad
+- Each test hand-rolls its own temp project; legacy/current cases silently diverge and a future update fixes one path while breaking another.
+- Only adapter unit tests exist; command runtime regressions in `.transpec/workspace/` or output paths go undetected.
+
+### 6. Tests Required
+- `packages/cli/src/core/framework/adapters/openspec.test.ts`
+- `packages/cli/src/core/framework/adapters/trellis.test.ts`
+- `packages/cli/src/core/framework/adapters/openspec-format.test.ts`
+- `packages/cli/src/cli/commands/runtime-compat.test.ts`
+
+Assertion points:
+- Legacy/current variants both detect and parse.
+- Fenced code examples do not inflate OpenSpec requirement counts.
+- Trellis package-scoped spec names keep package prefixes.
+- `convert -> preprocess -> apply` writes expected output files and runtime contexts.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+it('should parse current trellis', async () => {
+  await fs.writeFile('.trellis/spec/backend/error-handling.md', '# Errors');
+});
+```
+
+Why this is wrong:
+- The test claims to cover current Trellis but actually uses legacy single-repo layout.
+- It cannot catch package-scoped regressions from monorepo updates.
+
+#### Correct
+
+```typescript
+const projectPath = await createTempDir('transpec-trellis-current-', tempDirs);
+await createTrellisProject(projectPath, 'current');
+await setupTranspecConfig(projectPath, 'trellis', 'openspec');
+await preprocessCommand({ projectPath });
+await applyCommand({ projectPath });
+```
+
+Why this is correct:
+- The same current-layout fixture is reused across adapter and command tests.
+- Package-scoped layout, task lifecycle metadata, and CLI runtime files are validated together.
+
+---
+
 ## Common Mistakes
 
 ### 1. Test without assertions

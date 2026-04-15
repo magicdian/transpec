@@ -37,6 +37,14 @@ For each entity, extract:
 - Description: <text>
 ```
 
+Some OpenSpec specs may also use plain level-3 headings without the `Requirement:` prefix:
+
+```md
+## ADDED Requirements
+### <name>
+- Description: <text>
+```
+
 **Design Decisions**:
 ```md
 ## Design Decisions

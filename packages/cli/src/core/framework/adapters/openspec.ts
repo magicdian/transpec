@@ -26,6 +26,7 @@ import * as path from 'path';
 import { BaseFrameworkAdapter, FrameworkDetails } from '../base-adapter.js';
 import { CoreEntity, CoreType, FrameworkType } from '../../ir/types.js';
 import { getLogger, LogModules } from '../../logging/index.js';
+import { countOpenSpecRequirements } from './openspec-format.js';
 
 const logger = getLogger(LogModules.ADAPTER);
 
@@ -353,13 +354,9 @@ export class OpenSpecAdapter extends BaseFrameworkAdapter {
       const sections = this.extractSections(content);
       metadata.sections = Object.keys(sections);
 
-      // Look for requirements
-      const addedReqs = content.match(/## ADDED Requirements\n([\s\S]*?)(?=## |$)/g);
-      const modifiedReqs = content.match(/## MODIFIED Requirements\n([\s\S]*?)(?=## |$)/g);
-
       metadata.requirementCount = {
-        added: addedReqs ? (addedReqs[0].match(/### Requirement:/g) || []).length : 0,
-        modified: modifiedReqs ? (modifiedReqs[0].match(/### Requirement:/g) || []).length : 0,
+        added: countOpenSpecRequirements(content, 'ADDED'),
+        modified: countOpenSpecRequirements(content, 'MODIFIED'),
       };
     }
 

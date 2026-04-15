@@ -14,6 +14,7 @@ import { LogModules, getLogger } from '../logging/index.js';
 import { SQLiteStorage } from '../storage/sqlite.js';
 import { FrameworkAdapter, FrameworkRegistry } from '../framework/index.js';
 import { CoreEntity, CoreRelation, ConversionResult, EnhancedAnalysis, IRMetadata, PreprocessState, ValidationIssue, FrameworkType } from '../ir/types.js';
+import { extractOpenSpecRequirementNames } from '../framework/adapters/openspec-format.js';
 import { BatchProcessor } from './batch-processor.js';
 
 const logger = getLogger(LogModules.ENGINE);
@@ -464,15 +465,10 @@ export class ConversionEngine {
     // Example: Extract "implements" relations from OpenSpec changes
     for (const entity of entities) {
       if (entity.extendedType === 'change') {
-        // Look for spec references in content
-        const specMatches = entity.content.match(/## (?:ADDED|MODIFIED) Requirements\n+### Requirement: (.+)/g);
-        if (specMatches) {
-          for (const match of specMatches) {
-            const specName = match.replace(/## (?:ADDED|MODIFIED) Requirements\n+### Requirement: /, '');
-            // Create a relation if we can find the target spec
-            // This is simplified - real implementation would look up actual spec entities
-            logger.debug('Found spec reference', { change: entity.name, spec: specName });
-          }
+        for (const specName of extractOpenSpecRequirementNames(entity.content)) {
+          // Create a relation if we can find the target spec
+          // This is simplified - real implementation would look up actual spec entities
+          logger.debug('Found spec reference', { change: entity.name, spec: specName });
         }
       }
     }

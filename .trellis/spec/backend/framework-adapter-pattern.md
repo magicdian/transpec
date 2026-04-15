@@ -323,6 +323,119 @@ This enables:
 
 ---
 
+## Scenario: Upstream Framework Compatibility
+
+### 1. Scope / Trigger
+- Trigger: OpenSpec and Trellis upstream projects evolve document headers, task metadata, and spec directory layout without changing the fundamental framework identity.
+- Trigger: Adapter logic and engine relation extraction must continue to parse both legacy and current project shapes after submodule updates.
+
+### 2. Signatures
+
+Compatibility-sensitive entry points:
+
+```typescript
+// packages/cli/src/core/framework/adapters/openspec-format.ts
+export function countOpenSpecRequirements(
+  content: string,
+  section: 'ADDED' | 'MODIFIED',
+): number;
+
+export function extractOpenSpecRequirementNames(content: string): string[];
+
+// packages/cli/src/core/framework/adapters/openspec.ts
+async parseAll(projectPath: string): Promise<CoreEntity[]>;
+
+// packages/cli/src/core/framework/adapters/trellis.ts
+async detect(projectPath: string): Promise<boolean>;
+async parseAll(projectPath: string): Promise<CoreEntity[]>;
+
+// packages/cli/src/core/engine/engine.ts
+private extractRelations(entities: CoreEntity[]): CoreRelation[];
+```
+
+### 3. Contracts
+
+OpenSpec parsing contract:
+- Accept both `### Requirement: <name>` and `### <name>` inside `## ADDED Requirements` / `## MODIFIED Requirements`.
+- Ignore requirement-looking headings that appear inside fenced code blocks.
+- Preserve original markdown in `entity.content`; compatibility helpers may only affect metadata extraction and relation discovery.
+
+Trellis parsing contract:
+- `detect()` must succeed for both single-repo markers (`.trellis/spec/backend/...`) and package-scoped monorepo markers (`.trellis/spec/<package>/<layer>/...`) as long as `.trellis/config.yaml`, `.trellis/tasks/`, or `.trellis/spec/` exists.
+- `parseAll()` must recurse under `.trellis/spec/` and preserve nested package prefixes in `entity.name` (example: `cli/backend/error-handling`).
+- `task.json` fields such as `current_phase`, `next_action`, `children`, and `parent` are runtime metadata and must survive as `entity.metadata.taskJson` without special-case stripping.
+
+Engine relation contract:
+- `extractRelations()` must use the same compatibility helper as adapter metadata extraction so legacy/current OpenSpec requirement headings produce the same discovered requirement names.
+
+### 4. Validation & Error Matrix
+
+| Boundary | Validation | Failure behavior |
+|----------|------------|------------------|
+| OpenSpec change parsing | Count requirement headers from compatible heading forms only | Requirement metadata under-counts and relation extraction drifts |
+| OpenSpec fenced code examples | Ignore `### Requirement:` lines inside code fences | Example snippets are falsely treated as real requirements |
+| Trellis detection | Accept legacy and monorepo package-scoped spec layouts | `detect()` returns false for valid updated projects |
+| Trellis spec recursion | Preserve nested package path in emitted `entity.name` | Converted OpenSpec spec slugs lose package context |
+| Trellis task metadata | Keep lifecycle fields under `metadata.taskJson` | Updated Trellis task runtime state becomes invisible after parse |
+
+### 5. Good/Base/Bad Cases
+
+#### Good
+- OpenSpec current spec uses `### Stable Output` and current change proposal contains a fenced `### Requirement:` example; adapter counts only the real requirement header.
+- Trellis current project stores specs under `.trellis/spec/cli/backend/` and current task state in `task.json.next_action`; adapter detects the project and exposes `cli/backend/...` entity names plus full `taskJson`.
+
+#### Base
+- OpenSpec legacy project uses only `### Requirement:` headings; requirement counts and relation extraction match previous behavior.
+- Trellis legacy single-repo project stores specs under `.trellis/spec/backend/` and task status in `prd.md`; adapter still parses one spec plus one task.
+
+#### Bad
+- Regex is duplicated in adapter and engine, but only one side is updated for compact headings; metadata and relation extraction disagree after an upstream format change.
+- Trellis parser flattens package-scoped spec names to `backend/error-handling`; converted OpenSpec output loses package context.
+
+### 6. Tests Required
+
+Required regression coverage:
+- `packages/cli/src/core/framework/adapters/openspec-format.test.ts`
+  - Assert compact headings count the same as legacy headings.
+  - Assert fenced code block headers are ignored.
+- `packages/cli/src/core/framework/adapters/openspec.test.ts`
+  - Assert one fixture project can contain both legacy and current OpenSpec change formats.
+- `packages/cli/src/core/framework/adapters/trellis.test.ts`
+  - Assert legacy single-repo and current monorepo package-scoped layouts both detect and parse.
+  - Assert `metadata.taskJson.next_action` and related lifecycle fields survive parse.
+- `packages/cli/src/cli/commands/runtime-compat.test.ts`
+  - Assert `convert -> preprocess -> apply` works for legacy/current OpenSpec and legacy/current Trellis project shapes.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+const specMatches = entity.content.match(
+  /## (?:ADDED|MODIFIED) Requirements\n+### Requirement: (.+)/g,
+);
+```
+
+Why this is wrong:
+- Only accepts one OpenSpec heading style.
+- Misaligns engine behavior from adapter metadata if copied in multiple places.
+- Cannot exclude fenced code examples safely.
+
+#### Correct
+
+```typescript
+for (const specName of extractOpenSpecRequirementNames(entity.content)) {
+  logger.debug('Found spec reference', { change: entity.name, spec: specName });
+}
+```
+
+Why this is correct:
+- One compatibility helper owns the evolving parse rule.
+- Adapter metadata and engine relation extraction stay in sync.
+- Future upstream drift is handled by extending one helper plus its fixture matrix.
+
+---
+
 ## Common Mistakes
 
 ### 1. Modifying content during parsing
