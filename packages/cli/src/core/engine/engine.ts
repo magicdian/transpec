@@ -18,6 +18,42 @@ import { extractOpenSpecRequirementNames } from '../framework/adapters/openspec-
 import { BatchProcessor } from './batch-processor.js';
 
 const logger = getLogger(LogModules.ENGINE);
+const RELATION_STOPWORDS = new Set([
+  'a',
+  'an',
+  'and',
+  'are',
+  'as',
+  'at',
+  'be',
+  'by',
+  'change',
+  'changes',
+  'cli',
+  'command',
+  'commands',
+  'feature',
+  'for',
+  'from',
+  'git',
+  'in',
+  'into',
+  'is',
+  'of',
+  'on',
+  'or',
+  'project',
+  'projects',
+  'repo',
+  'repository',
+  'the',
+  'this',
+  'to',
+  'tool',
+  'tools',
+  'with',
+  'xgit',
+]);
 
 export enum ConversionPhase {
   PARSE = 'parse',
@@ -344,19 +380,22 @@ export class ConversionEngine {
     for (const entity of this.entities) {
       try {
         // Map extendedType if needed
+        const originalType = entity.extendedType;
         const targetExtendedType = this.mapExtendedType(entity.extendedType);
         entity.extendedType = targetExtendedType;
 
         // Update metadata
         entity.metadata = {
           ...entity.metadata,
-          convertedFrom: entity.extendedType,
+          convertedFrom: originalType,
+          convertedTo: targetExtendedType,
+          sourceExtendedType: entity.metadata.sourceExtendedType ?? originalType,
           convertedAt: new Date().toISOString(),
         };
 
         logger.debug('Entity transformed', {
           id: entity.id,
-          originalType: entity.extendedType,
+          originalType,
           newType: targetExtendedType,
         });
 
@@ -458,22 +497,95 @@ export class ConversionEngine {
   }
 
   private extractRelations(entities: CoreEntity[]): CoreRelation[] {
-    // Simplified relation extraction based on content references
-    // In a full implementation, this would parse content for @mentions, links, etc.
-    const relations: CoreRelation[] = [];
+    if (this.options.sourceFramework !== 'openspec') {
+      return [];
+    }
 
-    // Example: Extract "implements" relations from OpenSpec changes
+    const relations: CoreRelation[] = [];
+    const emittedRelationIds = new Set<string>();
+    const specEntities = entities
+      .filter(entity => entity.extendedType === 'spec')
+      .map(entity => ({
+        entity,
+        normalizedName: this.normalizeRelationName(entity.name),
+        tokens: this.tokenizeRelationText(entity.name),
+      }));
+
     for (const entity of entities) {
-      if (entity.extendedType === 'change') {
-        for (const specName of extractOpenSpecRequirementNames(entity.content)) {
-          // Create a relation if we can find the target spec
-          // This is simplified - real implementation would look up actual spec entities
-          logger.debug('Found spec reference', { change: entity.name, spec: specName });
+      if (entity.extendedType !== 'change') {
+        continue;
+      }
+
+      const explicitRequirementNames = new Set(
+        extractOpenSpecRequirementNames(entity.content)
+          .map(name => this.normalizeRelationName(name))
+          .filter(Boolean),
+      );
+      const fuzzyTokens = this.collectRelationTokens(entity);
+
+      for (const spec of specEntities) {
+        const matchedTokens = [...spec.tokens].filter(token => fuzzyTokens.has(token));
+        const matchesExplicitRequirement = explicitRequirementNames.has(spec.normalizedName);
+        const hasStrongToken = matchedTokens.some(token => token.length >= 5);
+        const hasHeuristicMatch = matchedTokens.length >= 2 || hasStrongToken;
+
+        if (!matchesExplicitRequirement && !hasHeuristicMatch) {
+          continue;
         }
+
+        const relationId = `rel-${entity.id}-${spec.entity.id}-implements`;
+        if (emittedRelationIds.has(relationId)) {
+          continue;
+        }
+        emittedRelationIds.add(relationId);
+
+        relations.push({
+          id: relationId,
+          sourceId: entity.id,
+          targetId: spec.entity.id,
+          relationType: 'implements',
+          metadata: {
+            discovery: matchesExplicitRequirement ? 'requirement-header' : 'name-overlap',
+            matchedTokens,
+          },
+        });
+
+        logger.debug('Found spec relation', {
+          change: entity.name,
+          spec: spec.entity.name,
+          matchedTokens,
+          discovery: matchesExplicitRequirement ? 'requirement-header' : 'name-overlap',
+        });
       }
     }
 
     return relations;
+  }
+
+  private collectRelationTokens(entity: CoreEntity): Set<string> {
+    const metadataValues = [
+      entity.name,
+      entity.content,
+      typeof entity.metadata.sourceTitle === 'string' ? entity.metadata.sourceTitle : '',
+      typeof entity.metadata.sourceDescription === 'string' ? entity.metadata.sourceDescription : '',
+    ];
+    return this.tokenizeRelationText(metadataValues.join('\n'));
+  }
+
+  private normalizeRelationName(value: string): string {
+    return value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim()
+      .replace(/\s+/g, ' ');
+  }
+
+  private tokenizeRelationText(value: string): Set<string> {
+    return new Set(
+      this.normalizeRelationName(value)
+        .split(' ')
+        .filter(token => token.length >= 3 && !RELATION_STOPWORDS.has(token)),
+    );
   }
 
   private mapExtendedType(type: string): string {

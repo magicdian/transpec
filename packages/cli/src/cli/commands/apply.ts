@@ -9,17 +9,22 @@
 
 import chalk from 'chalk';
 import * as fs from 'fs/promises';
+import * as path from 'path';
 import { SQLiteStorage } from '../../core/storage/sqlite.js';
 import { ConversionEngine } from '../../core/engine/engine.js';
+import { CoreRelation } from '../../core/ir/types.js';
 import { LogModules, getLogger } from '../../core/logging/index.js';
 import {
   getProjectEnhancedAnalysisPath,
   getProjectFrameworkSkillPath,
   getProjectIrDbPath,
+  getProjectPreprocessContextPath,
   loadEnhancedAnalysisFile,
   mergeEnhancedAnalysis,
+  writePreprocessContext,
   writePostprocessContext,
 } from '../../core/skill/index.js';
+import { runTargetPostprocess } from '../../core/postprocess/index.js';
 import { loadProjectConfig } from '../utils/project-config.js';
 import { configureProjectLogger } from '../utils/logging.js';
 
@@ -62,7 +67,15 @@ export async function applyCommand(options: ApplyOptions): Promise<void> {
 
   const storage = new SQLiteStorage(dbPath);
   let entities = storage.loadAllEntities();
-  const relations = storage.loadRelations();
+  let relations = storage.loadRelations();
+  if (relations.length === 0) {
+    const fallbackRelations = await loadRelationsFromPreprocessContext(projectPath);
+    if (fallbackRelations.length > 0) {
+      relations = fallbackRelations;
+      storage.saveRelations(relations);
+      console.log(chalk.gray(`  Restored ${relations.length} relations from existing preprocess context\n`));
+    }
+  }
 
   if (entities.length === 0) {
     console.log(chalk.red('✗ No entities found in RAW IR. Run the agent preprocess flow first.\n'));
@@ -81,6 +94,13 @@ export async function applyCommand(options: ApplyOptions): Promise<void> {
     entities = merged.entities;
     importedEnhancedAnalysis = merged.updatedCount;
     storage.saveEntities(entities);
+    await writePreprocessContext(
+      projectPath,
+      sourceFramework,
+      targetFramework,
+      entities,
+      relations,
+    );
     console.log(chalk.gray(`  Imported enhanced analysis for ${importedEnhancedAnalysis} entities\n`));
   } else if (!options.force) {
     console.log(chalk.yellow(`  No enhanced analysis file found at ${getProjectEnhancedAnalysisPath(projectPath)}\n`));
@@ -127,15 +147,53 @@ export async function applyCommand(options: ApplyOptions): Promise<void> {
     const postprocessSkillPath = getProjectFrameworkSkillPath(projectPath, 'postprocess', targetFramework);
     console.log(chalk.gray(`  Context: ${postprocessContextPath}`));
 
+    console.log(chalk.bold('\nStep 5: Running deterministic postprocess...'));
+    const postprocessResult = await runTargetPostprocess(projectPath, targetFramework);
+    if (postprocessResult.generatedFiles.length > 0) {
+      for (const file of postprocessResult.generatedFiles) {
+        console.log(chalk.gray(`  ${file.layer}: ${file.path}`));
+      }
+    } else {
+      console.log(chalk.gray('  No deterministic grounded specs were generated'));
+    }
+    if (postprocessResult.warnings.length > 0) {
+      for (const warning of postprocessResult.warnings) {
+        console.log(chalk.yellow(`  ⚠ ${warning}`));
+      }
+    }
+
     console.log(chalk.green.bold('\n✓ Apply plumbing completed successfully!\n'));
     console.log(chalk.bold('Next Agent Step:'));
-    console.log(`  1. Read ${chalk.cyan(postprocessSkillPath)}`);
-    console.log(`  2. Read ${chalk.cyan(postprocessContextPath)}`);
-    console.log(`  3. Execute the target-specific postprocess workflow\n`);
+    console.log(`  1. Review generated grounded docs under ${chalk.cyan(path.join(projectPath, '.trellis', 'spec'))}`);
+    console.log(`  2. Read ${chalk.cyan(postprocessSkillPath)}`);
+    console.log(`  3. Read ${chalk.cyan(postprocessContextPath)}`);
+    console.log(`  4. Refine target-specific postprocess output if needed\n`);
 
   } catch (error) {
     logger.error('Apply failed', { error: (error as Error).message });
     console.log(chalk.red(`✗ Apply failed: ${(error as Error).message}\n`));
     throw error;
+  }
+}
+
+async function loadRelationsFromPreprocessContext(projectPath: string): Promise<CoreRelation[]> {
+  try {
+    const content = await fs.readFile(getProjectPreprocessContextPath(projectPath), 'utf-8');
+    const parsed = JSON.parse(content) as {
+      relations?: Array<{
+        id: string;
+        sourceId: string;
+        targetId: string;
+        type: string;
+      }>;
+    };
+    return (parsed.relations ?? []).map(relation => ({
+      id: relation.id,
+      sourceId: relation.sourceId,
+      targetId: relation.targetId,
+      relationType: relation.type,
+    }));
+  } catch {
+    return [];
   }
 }

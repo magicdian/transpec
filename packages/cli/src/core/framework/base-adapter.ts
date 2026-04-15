@@ -5,6 +5,7 @@
  * The Core IR schema does NOT change when adding new frameworks.
  */
 
+import { createHash } from 'crypto';
 import { CoreEntity, CoreType, FrameworkType } from '../ir/types.js';
 
 export interface FrameworkAdapter {
@@ -90,5 +91,26 @@ export abstract class BaseFrameworkAdapter implements FrameworkAdapter {
 
   protected generateId(prefix: string): string {
     return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  protected generateStableId(
+    prefix: string,
+    ...parts: Array<string | number | boolean | null | undefined>
+  ): string {
+    const seed = parts
+      .filter((part): part is string | number | boolean => part !== null && part !== undefined)
+      .map(part => String(part).trim().toLowerCase())
+      .filter(part => part.length > 0)
+      .join('|');
+
+    if (!seed) {
+      return this.generateId(prefix);
+    }
+
+    const digest = createHash('sha1')
+      .update(`${prefix}|${seed}`)
+      .digest('hex')
+      .slice(0, 16);
+    return `${prefix}-${digest}`;
   }
 }

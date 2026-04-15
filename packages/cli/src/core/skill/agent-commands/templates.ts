@@ -33,6 +33,10 @@ Prepare deterministic RAW IR, then execute the source-specific preprocess skill 
    \`\`\`
    ${context.enhancedAnalysisPath}
    \`\`\`
+7. Refresh the preprocess context snapshot so \`hasEnhancedAnalysis\` reflects the written analysis:
+   \`\`\`bash
+   transpec preprocess --skip-convert
+   \`\`\`
 
 ## Enhanced Analysis Output Format
 
@@ -61,6 +65,7 @@ Prepare deterministic RAW IR, then execute the source-specific preprocess skill 
 - Do not look for built-in skill markdown inside the installed npm package.
 - Use the project-local skill markdown already generated in \`.transpec/skills/\`.
 - Validate the JSON by re-reading the file after writing it.
+- The final \`transpec preprocess --skip-convert\` refresh keeps \`.transpec/workspace/preprocess-context.json\` consistent with the saved enhanced analysis.
 `;
 }
 
@@ -69,7 +74,7 @@ export function buildApplyWorkflowBody(context: AgentCommandTemplateContext): st
 
 ## Goal
 
-Apply deterministic transformation/emission using RAW IR plus any generated enhanced analysis, then execute the target-specific postprocess skill.
+Apply deterministic transformation/emission using RAW IR plus any generated enhanced analysis, then review or refine the generated target-specific grounded specs.
 
 ## Steps
 
@@ -82,19 +87,21 @@ Apply deterministic transformation/emission using RAW IR plus any generated enha
    \`\`\`bash
    transpec apply
    \`\`\`
-4. Read the target postprocess skill:
+4. Review the deterministic grounded docs that \`transpec apply\` already generated under \`.trellis/spec/\`.
+5. Read the target postprocess skill:
    \`\`\`
    ${context.postprocessSkillPath}
    \`\`\`
-5. Read the generated postprocess context:
+6. Read the generated postprocess context:
    \`\`\`
    ${context.postprocessContextPath}
    \`\`\`
-6. Follow the postprocess skill and complete any target-framework-specific postprocessing.
+7. Follow the postprocess skill only if the generated grounded docs still need refinement or expansion.
 
 ## Important
 
 - The CLI handles deterministic transform/emit plumbing.
+- The CLI also runs deterministic postprocess generation for supported target frameworks.
 - Use the project-local skill markdown already generated in \`.transpec/skills/\`.
 - Do not fetch skill markdown from the installed npm package during agent execution.
 `;

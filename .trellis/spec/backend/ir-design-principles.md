@@ -80,7 +80,7 @@ export interface EnhancedAnalysis {
 
 | Field | Purpose | Notes |
 |-------|---------|-------|
-| `id` | Globally unique identifier | Generated: `{framework}-{type}-{timestamp}-{random}` |
+| `id` | Globally unique identifier | Deterministic for the same source entity when a stable seed exists |
 | `name` | Human-readable name | Extracted from file/directory name |
 | `coreType` | Maps to stable type | Only `DOCUMENT` or `WORKFLOW` |
 | `extendedType` | Framework-specific type | Stored as string for flexibility |
@@ -89,6 +89,54 @@ export interface EnhancedAnalysis {
 | `metadata` | Framework-specific data | JSON blob - schema-free |
 | `sourceFramework` | Origin framework | For traceability |
 | `sourcePath` | Original file location | For debugging and relinking |
+
+---
+
+## Entity Identity Contract
+
+`CoreEntity.id` is not just an internal parse artifact. In the current runtime workflow it is also the join key for:
+
+- `.transpec/workspace/preprocess-context.json`
+- `.transpec/workspace/enhanced-analysis.json`
+- emitted `CoreRelation.sourceId/targetId`
+- conversion validation and postprocess context derivation
+
+Identity rules:
+
+- Parse reruns for the same source entity MUST keep the same `id` whenever the adapter has a stable seed.
+- Relation extraction MUST use the same stable entity IDs that are exported to workspace JSON.
+- Enhanced-analysis continuity MUST be preserved either by stable IDs or by an explicit remap/reconciliation step before rewriting preprocess context.
+- Random fallback IDs are allowed only when no stable source reference exists, and they MUST NOT become part of a persisted runtime contract.
+
+### Good
+
+```typescript
+return {
+  id: this.generateStableId('openspec-change', `change:${sourceSlug}`),
+  // ...
+};
+```
+
+Why this is good:
+
+- The same OpenSpec change gets the same IR ID after `preprocess` reruns.
+- Existing enhanced analysis can be reattached safely.
+- Relations and validator output continue to point at the same logical entity.
+
+### Bad
+
+```typescript
+return {
+  id: this.generateId(`openspec-${extendedType}`),
+  // ...
+};
+```
+
+Why this is bad:
+
+- Every parse refresh invents new entity IDs.
+- `enhanced-analysis.json` and `preprocess-context.json` silently drift apart.
+- Downstream postprocess and validation can only recover by heuristics.
 
 ---
 

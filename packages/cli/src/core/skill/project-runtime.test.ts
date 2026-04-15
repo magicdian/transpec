@@ -114,5 +114,42 @@ describe('project runtime skill materialization', () => {
     expect(merged.entities[0].metadata.enhancedAnalysis).toMatchObject({
       intent: 'Example intent',
     });
+
+    await writePreprocessContext(projectPath, 'openspec', 'trellis', merged.entities, sampleRelations);
+    const refreshedPreprocess = JSON.parse(
+      await fs.readFile(getProjectPreprocessContextPath(projectPath), 'utf-8'),
+    );
+    expect(refreshedPreprocess.entities[0].hasEnhancedAnalysis).toBe(true);
+  });
+
+  it('should mark hasEnhancedAnalysis true when matching enhanced-analysis.json already exists on disk', async () => {
+    const projectPath = await createTempProject();
+    await materializeProjectSkills(projectPath, 'openspec', 'trellis');
+    await fs.mkdir(path.dirname(getProjectEnhancedAnalysisPath(projectPath)), { recursive: true });
+
+    await fs.writeFile(getProjectEnhancedAnalysisPath(projectPath), JSON.stringify({
+      version: '1.0.0',
+      generatedAt: new Date().toISOString(),
+      sourceFramework: 'openspec',
+      targetFramework: 'trellis',
+      entities: {
+        'entity-1': {
+          intent: 'Example intent',
+          keyPoints: ['k1'],
+          dependencies: [],
+          constraints: [],
+          requirement: [],
+          design: [],
+          implementNote: [],
+        },
+      },
+    }));
+
+    await writePreprocessContext(projectPath, 'openspec', 'trellis', sampleEntities, sampleRelations);
+
+    const preprocessContext = JSON.parse(
+      await fs.readFile(getProjectPreprocessContextPath(projectPath), 'utf-8'),
+    );
+    expect(preprocessContext.entities[0].hasEnhancedAnalysis).toBe(true);
   });
 });

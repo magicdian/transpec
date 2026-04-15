@@ -98,10 +98,6 @@ export async function preprocessCommand(options: PreprocessOptions): Promise<voi
 
     console.log(chalk.gray(`  Loaded ${entities.length} entities, ${relations.length} relations\n`));
 
-    if (options.force) {
-      await fs.rm(getProjectEnhancedAnalysisPath(projectPath), { force: true });
-    }
-
     console.log(chalk.bold('Step 3: Writing preprocess context...'));
     const preprocessContextPath = await writePreprocessContext(
       projectPath,

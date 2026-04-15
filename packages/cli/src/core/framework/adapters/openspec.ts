@@ -23,6 +23,7 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { parse as parseYaml } from 'yaml';
 import { BaseFrameworkAdapter, FrameworkDetails } from '../base-adapter.js';
 import { CoreEntity, CoreType, FrameworkType } from '../../ir/types.js';
 import { getLogger, LogModules } from '../../logging/index.js';
@@ -97,7 +98,7 @@ export class OpenSpecAdapter extends BaseFrameworkAdapter {
     const metadata = this.parseMetadata(content, extendedType, filePath);
 
     return {
-      id: this.generateId(`openspec-${extendedType}`),
+      id: this.buildEntityId(filePath, extendedType),
       name,
       coreType: CoreType.DOCUMENT,
       extendedType,
@@ -202,6 +203,9 @@ export class OpenSpecAdapter extends BaseFrameworkAdapter {
         logger.debug('No design.md found', { changeDir });
       }
 
+      await this.attachChangeManifest(changeDir, entity);
+      entity.id = this.buildEntityId(proposalFile, entity.extendedType, entity.metadata);
+
       entities.push(entity);
       logger.debug('Parsed change', { name: entity.name, id: entity.id });
     } catch (error) {
@@ -246,6 +250,9 @@ export class OpenSpecAdapter extends BaseFrameworkAdapter {
         } catch {
           logger.debug('No design.md found in archive', { changeDir });
         }
+
+        await this.attachChangeManifest(changeDir, entity);
+        entity.id = this.buildEntityId(proposalFile, entity.extendedType, entity.metadata);
 
         entities.push(entity);
         logger.debug('Parsed archived change', { name: entity.name, id: entity.id });
@@ -306,21 +313,83 @@ export class OpenSpecAdapter extends BaseFrameworkAdapter {
   async parseTasksFile(filePath: string): Promise<{ subtasks: Array<{ name: string; status: string }> }> {
     const content = await fs.readFile(filePath, 'utf-8');
     const subtasks: Array<{ name: string; status: string }> = [];
+    const seen = new Set<string>();
+    const lines = content.split(/\r?\n/);
 
-    // Match checkbox items like "- [x] 1.1 Task description" or "- [ ] 2.1 Task description"
-    const checkboxRegex = /- \[([ x])\] (\d+\.\d+(?:\.\d+)?)?\s*(.+)/g;
-    let match;
+    let currentSection: {
+      number: string;
+      title: string;
+      checkboxStatuses: string[];
+      hasStructuredDetails: boolean;
+    } | null = null;
 
-    while ((match = checkboxRegex.exec(content)) !== null) {
-      const status = match[1] === 'x' ? 'completed' : 'pending';
-      const number = match[2] || '';
-      const description = match[3].trim();
+    const pushSubtask = (name: string, status: string): void => {
+      const key = `${name}::${status}`;
+      if (seen.has(key)) {
+        return;
+      }
+      seen.add(key);
+      subtasks.push({ name, status });
+    };
 
-      subtasks.push({
-        name: number ? `${number} ${description}` : description,
-        status,
-      });
+    const flushSection = (): void => {
+      if (!currentSection || !currentSection.hasStructuredDetails) {
+        currentSection = null;
+        return;
+      }
+
+      const status = this.deriveSectionStatus(currentSection.checkboxStatuses);
+      pushSubtask(`${currentSection.number}. ${currentSection.title}`, status);
+      currentSection = null;
+    };
+
+    for (const line of lines) {
+      const sectionMatch = line.match(/^(\d+)\.\s+(.+)$/);
+      if (sectionMatch) {
+        flushSection();
+        currentSection = {
+          number: sectionMatch[1],
+          title: sectionMatch[2].trim(),
+          checkboxStatuses: [],
+          hasStructuredDetails: false,
+        };
+        continue;
+      }
+
+      const checkboxMatch = line.match(/^\s*-\s\[([ xX])\]\s*(\d+\.\d+(?:\.\d+)?)?\s*(.+?)\s*$/);
+      if (checkboxMatch) {
+        const status = checkboxMatch[1].toLowerCase() === 'x' ? 'completed' : 'pending';
+        const number = checkboxMatch[2] || '';
+        const description = checkboxMatch[3].trim();
+
+        if (currentSection) {
+          currentSection.checkboxStatuses.push(status);
+        }
+
+        pushSubtask(number ? `${number} ${description}` : description, status);
+        continue;
+      }
+
+      if (!currentSection) {
+        continue;
+      }
+
+      const trimmed = line.trim();
+      if (!trimmed) {
+        continue;
+      }
+
+      if (trimmed.startsWith('- ')) {
+        currentSection.hasStructuredDetails = true;
+        continue;
+      }
+
+      if (!/^估时[:：]/.test(trimmed)) {
+        currentSection.hasStructuredDetails = true;
+      }
     }
+
+    flushSection();
 
     logger.debug('Parsed tasks.md', { filePath, subtasks: subtasks.length });
     return { subtasks };
@@ -365,10 +434,106 @@ export class OpenSpecAdapter extends BaseFrameworkAdapter {
       const dateMatch = filePath.match(/(\d{4}-\d{2}-\d{2})/);
       if (dateMatch) {
         metadata.date = dateMatch[1];
+        metadata.createdAt = `${dateMatch[1]}T00:00:00.000Z`;
       }
     }
 
     return metadata;
+  }
+
+  private deriveSectionStatus(checkboxStatuses: string[]): string {
+    if (checkboxStatuses.length === 0) {
+      return 'pending';
+    }
+
+    const completedCount = checkboxStatuses.filter(status => status === 'completed').length;
+    if (completedCount === 0) {
+      return 'pending';
+    }
+    if (completedCount === checkboxStatuses.length) {
+      return 'completed';
+    }
+    return 'in_progress';
+  }
+
+  private async attachChangeManifest(changeDir: string, entity: CoreEntity): Promise<void> {
+    const manifestPath = path.join(changeDir, '.openspec.yaml');
+
+    try {
+      const manifestContent = await fs.readFile(manifestPath, 'utf-8');
+      const manifest = parseYaml(manifestContent);
+      if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) {
+        return;
+      }
+
+      const record = manifest as Record<string, unknown>;
+      entity.metadata.changeManifest = record;
+      entity.metadata.changeManifestPath = manifestPath;
+
+      if (typeof record.name === 'string') {
+        entity.metadata.sourceSlug = record.name;
+      }
+      if (typeof record.title === 'string') {
+        entity.metadata.sourceTitle = record.title;
+      }
+      if (typeof record.description === 'string') {
+        entity.metadata.sourceDescription = record.description;
+      }
+      if (typeof record.status === 'string') {
+        entity.metadata.sourceStatus = record.status;
+      }
+      if (typeof record.owner === 'string') {
+        entity.metadata.sourceOwner = record.owner;
+      }
+      if (typeof record.createdAt === 'string') {
+        entity.metadata.createdAt = record.createdAt;
+        entity.createdAt = record.createdAt;
+      }
+    } catch {
+      logger.debug('No .openspec.yaml found', { changeDir });
+    }
+  }
+
+  private buildEntityId(
+    filePath: string,
+    extendedType: string,
+    metadata?: Record<string, unknown>,
+  ): string {
+    if (extendedType === 'change') {
+      return this.generateStableId(
+        'openspec-change',
+        this.resolveChangeSeed(filePath, metadata),
+      );
+    }
+
+    return this.generateStableId(
+      'openspec-spec',
+      this.resolveSpecSeed(filePath),
+    );
+  }
+
+  private resolveChangeSeed(filePath: string, metadata?: Record<string, unknown>): string {
+    if (typeof metadata?.sourceSlug === 'string' && metadata.sourceSlug.trim()) {
+      return `change:${metadata.sourceSlug.trim().toLowerCase()}`;
+    }
+
+    const normalizedPath = filePath.replace(/\\/g, '/');
+    const match = normalizedPath.match(/\/openspec\/changes\/(?:archive\/)?(.+?)\/proposal\.md$/);
+    if (match) {
+      return `change:${match[1].toLowerCase()}`;
+    }
+
+    return `change:${path.basename(path.dirname(filePath)).toLowerCase()}`;
+  }
+
+  private resolveSpecSeed(filePath: string): string {
+    const normalizedPath = filePath.replace(/\\/g, '/');
+    const match = normalizedPath.match(/\/openspec\/specs\/(.+?)\/spec\.md$/);
+    if (match) {
+      return `spec:${match[1].toLowerCase()}`;
+    }
+
+    return `spec:${path.basename(path.dirname(filePath)).toLowerCase()}`;
   }
 
   private extractSections(content: string): Record<string, string> {

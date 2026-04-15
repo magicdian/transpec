@@ -101,6 +101,8 @@ export async function writePreprocessContext(
   const preprocessSkillPath = getProjectFrameworkSkillPath(projectPath, 'preprocess', sourceFramework);
   const enhancedAnalysisPath = getProjectEnhancedAnalysisPath(projectPath);
   const outputPath = getProjectPreprocessContextPath(projectPath);
+  const existingAnalysis = await reconcileEnhancedAnalysisIds(projectPath, entities);
+  const existingAnalysisIds = new Set(Object.keys(existingAnalysis?.entities ?? {}));
 
   const context: PreprocessContextFile = {
     version: '1.0.0',
@@ -116,7 +118,7 @@ export async function writePreprocessContext(
       name: entity.name,
       type: entity.extendedType,
       sourcePath: entity.sourcePath,
-      hasEnhancedAnalysis: Boolean(entity.metadata?.enhancedAnalysis),
+      hasEnhancedAnalysis: Boolean(entity.metadata?.enhancedAnalysis) || existingAnalysisIds.has(entity.id),
     })),
     relations: relations.map(relation => ({
       id: relation.id,
@@ -169,6 +171,170 @@ export async function loadEnhancedAnalysisFile(projectPath: string): Promise<Enh
   } catch {
     return null;
   }
+}
+
+async function reconcileEnhancedAnalysisIds(
+  projectPath: string,
+  entities: CoreEntity[],
+): Promise<EnhancedAnalysisFile | null> {
+  const analysisFile = await loadEnhancedAnalysisFile(projectPath);
+  if (!analysisFile) {
+    return null;
+  }
+
+  const currentIds = new Set(entities.map(entity => entity.id));
+  const analysisIds = Object.keys(analysisFile.entities);
+  if (analysisIds.length === 0 || analysisIds.every(id => currentIds.has(id))) {
+    return analysisFile;
+  }
+
+  const previousPreprocessContext = await loadPreprocessContextFile(projectPath);
+  const previousEntityIds = new Map(
+    (previousPreprocessContext?.entities ?? []).map(entity => [buildEntityReference(entity), entity.id]),
+  );
+  const loggedEntityIds = await loadLoggedEntityIds(projectPath, analysisFile);
+
+  let migrated = false;
+  const migratedEntities: Record<string, EnhancedAnalysis> = {};
+
+  for (const entity of entities) {
+    if (analysisFile.entities[entity.id]) {
+      migratedEntities[entity.id] = analysisFile.entities[entity.id];
+      continue;
+    }
+
+    const previousId = previousEntityIds.get(buildEntityReference(entity));
+    const loggedId = loggedEntityIds.get(buildEntityNameReference(entity));
+    const previousAnalysis = analysisFile.entities[previousId ?? ''] ?? analysisFile.entities[loggedId ?? ''];
+    if (!previousAnalysis) {
+      continue;
+    }
+
+    migratedEntities[entity.id] = previousAnalysis;
+    migrated = true;
+  }
+
+  if (!migrated) {
+    return analysisFile;
+  }
+
+  const reconciled: EnhancedAnalysisFile = {
+    ...analysisFile,
+    entities: migratedEntities,
+  };
+
+  await fs.writeFile(
+    getProjectEnhancedAnalysisPath(projectPath),
+    JSON.stringify(reconciled, null, 2),
+  );
+
+  return reconciled;
+}
+
+async function loadPreprocessContextFile(projectPath: string): Promise<PreprocessContextFile | null> {
+  try {
+    const content = await fs.readFile(getProjectPreprocessContextPath(projectPath), 'utf-8');
+    return JSON.parse(content) as PreprocessContextFile;
+  } catch {
+    return null;
+  }
+}
+
+function buildEntityReference(entity: {
+  type?: string;
+  extendedType?: string;
+  sourcePath: string;
+  name: string;
+}): string {
+  const entityType = entity.type ?? entity.extendedType ?? '';
+  return [
+    entityType.trim().toLowerCase(),
+    entity.sourcePath.trim().toLowerCase(),
+    entity.name.trim().toLowerCase(),
+  ].join('|');
+}
+
+function buildEntityNameReference(entity: {
+  type?: string;
+  extendedType?: string;
+  name: string;
+}): string {
+  const entityType = entity.type ?? entity.extendedType ?? '';
+  return [
+    entityType.trim().toLowerCase(),
+    entity.name.trim().toLowerCase(),
+  ].join('|');
+}
+
+async function loadLoggedEntityIds(
+  projectPath: string,
+  analysisFile: EnhancedAnalysisFile,
+): Promise<Map<string, string>> {
+  const analysisIds = new Set(Object.keys(analysisFile.entities));
+  if (analysisIds.size === 0) {
+    return new Map();
+  }
+
+  try {
+    const logPath = path.join(projectPath, '.transpec', 'logs', 'transpec.log');
+    const content = await fs.readFile(logPath, 'utf-8');
+    const mapping = new Map<string, string>();
+
+    for (const line of content.split(/\r?\n/)) {
+      if (!line.trim()) {
+        continue;
+      }
+
+      let parsed: {
+        module?: string;
+        message?: string;
+        data?: { id?: string; name?: string };
+      };
+      try {
+        parsed = JSON.parse(line);
+      } catch {
+        continue;
+      }
+
+      if (parsed.module !== 'adapter' || !parsed.message || !parsed.data?.id || !parsed.data?.name) {
+        continue;
+      }
+      if (!analysisIds.has(parsed.data.id)) {
+        continue;
+      }
+
+      const type = resolveLoggedEntityType(parsed.message);
+      if (!type) {
+        continue;
+      }
+
+      mapping.set(
+        buildEntityNameReference({
+          type,
+          name: parsed.data.name,
+        }),
+        parsed.data.id,
+      );
+    }
+
+    return mapping;
+  } catch {
+    return new Map();
+  }
+}
+
+function resolveLoggedEntityType(message: string): string | null {
+  const normalized = message.trim().toLowerCase();
+  if (normalized === 'parsed spec') {
+    return 'spec';
+  }
+  if (normalized === 'parsed change' || normalized === 'parsed archived change') {
+    return 'change';
+  }
+  if (normalized === 'parsed task') {
+    return 'task';
+  }
+  return null;
 }
 
 export function mergeEnhancedAnalysis(

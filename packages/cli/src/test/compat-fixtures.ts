@@ -36,6 +36,9 @@ export async function setupTranspecConfig(
   targetFramework: 'openspec' | 'trellis',
 ): Promise<void> {
   await fs.mkdir(path.join(projectPath, '.transpec'), { recursive: true });
+  await fs.mkdir(path.join(projectPath, '.transpec', 'ir'), { recursive: true });
+  await fs.mkdir(path.join(projectPath, '.transpec', 'logs'), { recursive: true });
+  await fs.mkdir(path.join(projectPath, '.transpec', 'workspace'), { recursive: true });
   await materializeProjectSkills(projectPath, sourceFramework, targetFramework);
 
   const config = buildInitConfigYaml({
@@ -99,14 +102,18 @@ export async function seedEnhancedAnalysis(projectPath: string): Promise<void> {
   );
 }
 
-export async function createOpenSpecProject(projectPath: string, variant: FrameworkVariant): Promise<void> {
+export async function createOpenSpecProject(
+  projectPath: string,
+  variant: FrameworkVariant,
+  location: 'active' | 'archive' = 'active',
+): Promise<void> {
   await writeFixtureFile(projectPath, 'openspec/config.yaml', 'name: sample\n');
   await writeFixtureFile(
     projectPath,
-    'openspec/specs/capability/spec.md',
+    'openspec/specs/compatibility-flow/spec.md',
     variant === 'legacy'
-      ? '# Capability\n\n### Requirement: Stable Output\nThe system SHALL stay stable.\n'
-      : '# Capability\n\n### Stable Output\nThe system SHALL stay stable.\n',
+      ? '# Compatibility Flow\n\n### Requirement: Stable Output\nThe system SHALL stay stable.\n'
+      : '# Compatibility Flow\n\n### Stable Output\nThe system SHALL stay stable.\n',
   );
 
   const changeBody = variant === 'legacy'
@@ -114,30 +121,33 @@ export async function createOpenSpecProject(projectPath: string, variant: Framew
 
 ## ADDED Requirements
 ### Requirement: Legacy Header
-The system SHALL preserve legacy requirement headings.
+The system SHALL preserve legacy requirement headings within the compatibility flow.
 
 ## MODIFIED Requirements
 ### Requirement: Existing Behavior
-The system SHALL preserve modified requirement headings.
+The system SHALL preserve modified requirement headings within the compatibility flow.
 `
     : `# Compact Style Change
 
 ## ADDED Requirements
 ### Compact Header
-The system SHALL accept compact requirement headings.
+The system SHALL accept compact requirement headings within the compatibility flow.
 
 ## MODIFIED Requirements
 ### Existing Behavior
-The system SHALL keep compact modified headings compatible.
+The system SHALL keep compact modified headings compatible within the compatibility flow.
 `;
 
   const changeSlug = variant === 'legacy'
     ? '2026-04-15-legacy-style'
     : '2026-04-15-compact-style';
+  const changeBaseDir = location === 'archive'
+    ? `openspec/changes/archive/${changeSlug}`
+    : `openspec/changes/${changeSlug}`;
 
   await writeFixtureFile(
     projectPath,
-    `openspec/changes/${changeSlug}/proposal.md`,
+    `${changeBaseDir}/proposal.md`,
     variant === 'current'
       ? `${changeBody}
 \n\`\`\`md
@@ -149,8 +159,26 @@ This should stay invisible to the parser.
   );
   await writeFixtureFile(
     projectPath,
-    `openspec/changes/${changeSlug}/tasks.md`,
-    '- [x] 1.1 Prepare runtime flow\n- [ ] 1.2 Verify compatibility\n',
+    `${changeBaseDir}/tasks.md`,
+    `# tasks for ${changeSlug}
+
+1. Runtime flow
+   - [x] 1.1 Prepare runtime flow
+2. Compatibility validation
+   - [ ] 2.1 Verify compatibility
+3. Documentation follow-up
+   - Capture migration notes for future maintainers
+`,
+  );
+  await writeFixtureFile(
+    projectPath,
+    `${changeBaseDir}/.openspec.yaml`,
+    `name: ${variant === 'legacy' ? 'legacy-style' : 'compact-style'}
+title: ${variant === 'legacy' ? 'Legacy Style Change' : 'Compact Style Change'}
+owner: TBD
+description: Preserve OpenSpec compatibility through Trellis conversion.
+status: draft
+`,
   );
 }
 

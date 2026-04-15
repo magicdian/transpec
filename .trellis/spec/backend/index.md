@@ -19,9 +19,9 @@ This directory contains guidelines for backend development. Fill in each file wi
 | [Error Handling](./error-handling.md) | Error types, handling strategies | ✅ Complete |
 | [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | ✅ Complete |
 | [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | ✅ Complete |
-| [IR Design Principles](./ir-design-principles.md) | Core IR types, metadata, type mapping | ✅ Complete |
-| [Framework Adapter Pattern](./framework-adapter-pattern.md) | Adapter interface, registry, implementation | ✅ Complete |
-| [Conversion Pipeline](./conversion-pipeline.md) | 6-phase engine, validation, error handling | ✅ Complete |
+| [IR Design Principles](./ir-design-principles.md) | Core IR types, metadata, type mapping, stable entity identity | ✅ Complete |
+| [Framework Adapter Pattern](./framework-adapter-pattern.md) | Adapter interface, deterministic ID rules, target emit contracts | ✅ Complete |
+| [Conversion Pipeline](./conversion-pipeline.md) | 6-phase engine plus preprocess/apply/validate runtime contracts | ✅ Complete |
 | [Testing Guidelines](./testing-guidelines.md) | Vitest, test structure, coverage requirements | ✅ Complete |
 
 ---

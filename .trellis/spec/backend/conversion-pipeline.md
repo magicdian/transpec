@@ -8,6 +8,13 @@
 
 The ConversionEngine orchestrates the full conversion pipeline. It separates concerns into distinct phases, each with specific responsibilities and validation rules.
 
+The CLI command layer wraps those phases with runtime workspace artifacts:
+
+- `preprocess` refreshes RAW IR and exports preprocess context
+- enhanced analysis is produced outside the CLI and keyed by entity ID
+- `apply` imports enhanced analysis, rewrites runtime context, emits target files, writes postprocess context, and runs deterministic target postprocess
+- `validate` checks that the converted target is structurally consumable by downstream tooling
+
 ---
 
 ## Pipeline Phases
@@ -333,7 +340,9 @@ The CLI commands orchestrate engine phases and skills differently:
 |---------|--------------|
 | `transpec convert` | Internal/debug command for deterministic PARSE → RAW IR only |
 | `transpec preprocess` | Deterministic RAW IR preparation + preprocess context export |
-| `transpec apply` | Import enhanced analysis file + Transform/Validate/Emit + postprocess context export |
+| `transpec apply` | Import/reconcile enhanced analysis + Transform/Validate/Emit + postprocess context export + deterministic target postprocess |
+| `transpec postprocess` | Re-run deterministic target postprocess from runtime workspace context |
+| `transpec validate` | Verify runtime workspace JSON, emitted target skeleton, archive placement, and grounded docs |
 
 ### Command Workflow
 
@@ -346,9 +355,11 @@ transpec preprocess:
 
 transpec apply (target=trellis):
   ├── Step 1: Import .transpec/workspace/enhanced-analysis.json into RAW IR metadata
-  ├── Step 2: Run Transform+Emit (via engine.runTransformEmit())
-  ├── Step 3: Export .transpec/workspace/postprocess-context.json
-  └── Output: Guided next step for agent postprocess
+  ├── Step 2: Refresh .transpec/workspace/preprocess-context.json so hasEnhancedAnalysis matches disk truth
+  ├── Step 3: Run Transform+Emit
+  ├── Step 4: Export .transpec/workspace/postprocess-context.json
+  ├── Step 5: Run deterministic Trellis postprocess
+  └── Output: Minimum Trellis runtime skeleton + grounded docs + guided next step for optional target-specific refinement
 
 transpec apply (target=other):
   └── Output: Transform+Emit + target-specific postprocess context when available
@@ -370,19 +381,28 @@ transpec apply (target=other):
 - `preprocess`: Agent-side semantic enrichment after RAW IR exists
 - `postprocess`: Agent-side target-specific work after deterministic emit completes
 
+Deterministic postprocess and agent postprocess are intentionally separate:
+
+- Deterministic postprocess MUST generate the minimum target runtime artifacts that downstream tooling requires.
+- Agent postprocess MAY further refine or expand target-specific content.
+- Agent postprocess MUST NOT be the only mechanism that makes the converted target runnable.
+
 ### Example: trellis postprocess
 
 This skill is Trellis-specific and is copied into `.transpec/skills/postprocess/trellis/SKILL.md` during `transpec init`:
 
-1. CLI (`transpec apply`) writes `.transpec/workspace/postprocess-context.json`
-2. Agent reads `.transpec/skills/postprocess/trellis/SKILL.md`
-3. Agent analyzes project code to generate `.trellis/spec/backend/`, `.trellis/spec/frontend/`, `.trellis/spec/guides/`
+1. CLI (`transpec apply`) merges enhanced analysis, writes `.transpec/workspace/postprocess-context.json`, and runs deterministic Trellis postprocess
+2. Deterministic postprocess creates or refreshes minimum grounded docs under `.trellis/spec/`
+3. Agent reads `.transpec/skills/postprocess/trellis/SKILL.md`
+4. Agent optionally refines the generated Trellis-specific content further
 
 ```typescript
 // In apply.ts
 // 1. Merge .transpec/workspace/enhanced-analysis.json into entity metadata
-// 2. Run engine.runTransformEmit()
-// 3. Write .transpec/workspace/postprocess-context.json
+// 2. Refresh preprocess context so hasEnhancedAnalysis is truthful
+// 3. Run engine.runTransformEmit()
+// 4. Write .transpec/workspace/postprocess-context.json
+// 5. Run deterministic target postprocess
 ```
 
 ## Scenario: Agent-Driven Preprocess and Apply Runtime Contract
@@ -402,6 +422,8 @@ CLI command signatures:
 transpec init [--source <framework>] [--target <framework>] [--ide <ide>] [--mode <mode>] [--yes]
 transpec preprocess [--project-path <path>] [--skip-convert] [--force]
 transpec apply [--project-path <path>] [--force]
+transpec postprocess [--project-path <path>]
+transpec validate [--project-path <path>]
 transpec convert [--project-path <path>] [--source <framework>] [--target <framework>] [--dry-run]
 ```
 
@@ -413,6 +435,8 @@ writePreprocessContext(projectPath, sourceFramework, targetFramework, entities, 
 loadEnhancedAnalysisFile(projectPath)
 mergeEnhancedAnalysis(entities, analysisFile)
 writePostprocessContext(projectPath, sourceFramework, targetFramework, entitiesTransformed)
+validateConvertedProject(projectPath)
+runTargetPostprocess(projectPath, targetFramework)
 ```
 
 Generated agent assets must reference:
@@ -465,17 +489,24 @@ Required shape:
   "preprocessSkill": ".transpec/skills/preprocess/openspec/SKILL.md",
   "enhancedAnalysisOutput": ".transpec/workspace/enhanced-analysis.json",
   "entityCount": 2,
-  "relationCount": 0,
+  "relationCount": 3,
   "entities": [
     {
       "id": "entity-id",
       "name": "demo capability",
       "type": "spec",
       "sourcePath": "/absolute/path/to/source.md",
-      "hasEnhancedAnalysis": false
+      "hasEnhancedAnalysis": true
     }
   ],
-  "relations": []
+  "relations": [
+    {
+      "id": "rel-demo-change-demo-spec-implements",
+      "sourceId": "change-id",
+      "targetId": "spec-id",
+      "type": "implements"
+    }
+  ]
 }
 ```
 
@@ -483,6 +514,9 @@ Rules:
 - `preprocessSkill` must be the project-relative path to the project-local copied skill.
 - `enhancedAnalysisOutput` is the only supported write target for agent semantic output.
 - `entities[*].sourcePath` is absolute so the agent can inspect source files directly.
+- `relationCount` and `relations` must reflect the current exported relation graph, not just entity counts.
+- `hasEnhancedAnalysis` must be derived after any ID reconciliation, not from stale on-disk metadata alone.
+- `writePreprocessContext(...)` must try to reconcile stale enhanced-analysis IDs before finalizing these flags.
 
 #### 3.3 `.transpec/workspace/enhanced-analysis.json`
 
@@ -509,9 +543,10 @@ Required shape:
 ```
 
 Rules:
-- Top-level `entities` keys must match existing RAW IR entity IDs.
+- Top-level `entities` keys should match current RAW IR entity IDs after reconciliation.
 - Unknown entity IDs are ignored during merge.
 - Missing entity IDs are allowed; they mean "no semantic enrichment for this entity".
+- Stale IDs may be remapped by previous preprocess context or adapter parse identities recorded in `.transpec/logs/transpec.log`.
 - `apply` merges this file into `entity.metadata.enhancedAnalysis` before transform/emit.
 
 #### 3.4 `.transpec/workspace/postprocess-context.json`
@@ -535,7 +570,29 @@ Rules:
 - `postprocessSkill` must be project-relative and target-specific.
 - `entitiesTransformed` must equal the deterministic apply result count returned by `runTransformEmit()`.
 
-#### 3.5 RAW IR database path
+#### 3.5 Trellis runtime bootstrap contract
+
+Minimum deterministic output for OpenSpec -> Trellis:
+
+```text
+.trellis/workflow.md
+.trellis/spec/backend/index.md
+.trellis/spec/frontend/index.md
+.trellis/spec/guides/index.md
+.trellis/spec/guides/repository-and-conversion-state.md
+.trellis/tasks/archive/<YYYY-MM>/<MM-DD-slug>/task.json
+.trellis/tasks/archive/<YYYY-MM>/<MM-DD-slug>/prd.md
+.trellis/tasks/archive/<YYYY-MM>/<MM-DD-slug>/implement.jsonl
+.trellis/tasks/archive/<YYYY-MM>/<MM-DD-slug>/check.jsonl
+.trellis/tasks/archive/<YYYY-MM>/<MM-DD-slug>/debug.jsonl
+```
+
+Rules:
+- Deterministic emit/postprocess owns these files. Optional agent postprocess may refine them but must not be their only source.
+- Archived OpenSpec changes must land under `.trellis/tasks/archive/`, not the active task pool.
+- Grounded docs under `.trellis/spec/` are minimum runtime artifacts for Trellis workflow consumption, not purely decorative output.
+
+#### 3.6 RAW IR database path
 
 Supported path:
 
@@ -555,21 +612,21 @@ Rules:
 | `init` → config | `sourceFramework` and `targetFramework` both present and different | Print user-facing error and exit |
 | `init` → project skills | Built-in preprocess/postprocess asset exists for selected framework | If missing, generated config still points to expected runtime path, but this is a release bug and should fail tests |
 | `preprocess` → RAW IR | `.transpec/ir/conversion.db` exists and loads `entities.length > 0` | Print user-facing error and stop |
-| `preprocess` → context export | `preprocess-context.json` written successfully | Throw and fail command |
+| `preprocess` → relations export | `relationCount > 0` when relations exist in IR | `validate` reports `missing_relations` |
+| `preprocess` → enhanced analysis continuity | stale IDs are reconciled before final `hasEnhancedAnalysis` flags are written | `validate` reports `enhanced_analysis_id_mismatch` or `enhanced_analysis_unsynced` if unresolved |
 | agent → enhanced analysis file | JSON parses and matches expected top-level fields | `apply` treats unreadable file as missing |
 | `apply` → enhanced analysis import | If file missing and no `--force`, stop before transform | Print user-facing warning and return |
+| `apply` → workspace sync | `preprocess-context.json` rewritten after merge | `validate` reports stale `hasEnhancedAnalysis` if skipped |
 | `apply` → transform/emit | `runTransformEmit()` returns success or issues | Print issues and continue only when engine reports non-fatal warnings |
-| `apply` → postprocess context | `postprocess-context.json` written successfully | Throw and fail command |
+| `apply` → deterministic postprocess | target bootstrap files, task runtime files, and grounded docs exist | `validate` reports missing runtime artifacts |
+| `validate` → Trellis runtime | archive placement, task fields, and grounded specs are all present | Fail command with explicit issue codes |
 
 ### 5. Good/Base/Bad Cases
 
 #### Good
 
-- `transpec init --source openspec --target trellis --ide claude-code --yes`
-- Result:
-  - `.transpec/skills/preprocess/openspec/SKILL.md` exists
-  - `.transpec/skills/postprocess/trellis/SKILL.md` exists
-  - generated Claude command reads those project-local paths
+- `transpec preprocess` reruns on the same OpenSpec project and keeps or reconciles entity IDs so `hasEnhancedAnalysis` stays accurate.
+- `transpec apply` imports enhanced analysis for every entity, emits archive tasks plus runtime jsonl files, runs deterministic Trellis postprocess, and `transpec validate` passes.
 
 #### Base
 
@@ -585,6 +642,13 @@ Rules:
 - Result:
   - Without `--force`, command prints a user-facing warning and stops before transform
   - With `--force`, command may continue with deterministic transform/emit only
+- `preprocess` regenerates entity IDs without reconciliation
+- Result:
+  - old `enhanced-analysis.json` becomes detached from current entity IDs
+  - `validate` reports `enhanced_analysis_id_mismatch`
+- runtime correctness is delegated to an optional postprocess skill
+- Result:
+  - target appears converted but Trellis start/init-context cannot consume it reliably when the skill is skipped
 
 ### 6. Tests Required
 
@@ -594,6 +658,7 @@ Required regression coverage:
   - Assert project-local preprocess/postprocess markdown files are copied for selected frameworks.
 - `writePreprocessContext()`:
   - Assert `preprocessSkill` and `enhancedAnalysisOutput` are project-relative `.transpec/...` paths.
+-  Assert stale enhanced-analysis IDs can be reconciled from previous preprocess context or logged adapter parse identities.
 - `loadEnhancedAnalysisFile()` + `mergeEnhancedAnalysis()`:
   - Assert matched entity IDs update `metadata.enhancedAnalysis`.
   - Assert unmatched IDs do not break the merge.
@@ -601,38 +666,38 @@ Required regression coverage:
   - Assert generated preprocess/apply commands or skills mention only project-local `.transpec/...` paths.
   - Assert they do not depend on `packages/cli/.transpec` or `dist/.transpec`.
 - Smoke flow:
-  - Assert `init -> preprocess -> apply` succeeds in a temp project.
+  - Assert `init -> preprocess -> apply -> validate` succeeds in a temp project.
   - Assert `.transpec/ir/conversion.db`, preprocess context, enhanced analysis file, and postprocess context all exist at the expected points.
+  - Assert Trellis bootstrap files, grounded docs, archive placement, and task runtime jsonl files exist after apply.
 
 ### 7. Wrong vs Correct
 
 #### Wrong
 
 ```text
-1. Package ships markdown in dist/.transpec/skills/...
-2. Generated agent commands read markdown from the installed package path
-3. preprocess writes RAW IR to conversion-<timestamp>.db
-4. apply reads from .transpec/ir/conversion.db
+1. preprocess regenerates entity IDs without reconciliation
+2. apply merges enhanced analysis in memory but does not rewrite preprocess-context.json
+3. target runtime correctness depends on an optional postprocess skill creating workflow/bootstrap files
 ```
 
 Why this is wrong:
-- Agent behavior now depends on installation layout instead of project runtime state.
-- The runtime DB path is inconsistent across commands.
-- End-to-end flow breaks even when each individual command appears valid.
+- Workspace JSON drifts away from actual CLI state.
+- Existing enhanced analysis becomes unreachable after a refresh.
+- The converted target is only runnable when an optional LLM refinement step happens to run.
 
 #### Correct
 
 ```text
-1. Package bundles built-in assets under dist/core/skill/preprocess-skills/ and postprocess-skills/
-2. transpec init copies the selected assets into .transpec/skills/preprocess/<source>/ and postprocess/<target>/
-3. Generated agent commands read only project-local .transpec markdown and workspace JSON files
-4. preprocess and apply both use .transpec/ir/conversion.db for the normal runtime flow
+1. preprocess exports current entities/relations and reconciles old enhanced-analysis IDs before finalizing hasEnhancedAnalysis
+2. apply imports enhanced analysis, rewrites preprocess-context.json, then emits target files
+3. deterministic postprocess creates minimum target bootstrap and grounded docs
+4. target-specific agent postprocess only refines or expands what is already runnable
 ```
 
 Why this is correct:
-- The project runtime directory is the single source of truth for the initialized workflow.
-- Agent prompts stay stable regardless of package installation structure.
-- Deterministic CLI plumbing and agent-driven semantic/postprocess work are cleanly separated.
+- Runtime workspace state and emitted target state stay in sync.
+- Validation can enforce hard correctness before any optional semantic refinement runs.
+- Deterministic plumbing and target-specific postprocess have clean, non-overlapping responsibilities.
 
 ---
 
@@ -662,6 +727,18 @@ private extractRelations(entities: CoreEntity[]): CoreRelation[] {
 ```
 
 **Note**: Current implementation is simplified. Future versions will extract actual cross-references and build the relation graph.
+
+## Generated Target Contract
+
+When the emitted target is itself an operational workflow system, pipeline validation must go beyond entity counts.
+
+Required checks for framework-to-framework conversions:
+- [ ] Target bootstrap files required by downstream tools exist (`workflow.md`, spec indexes, equivalent entrypoints).
+- [ ] Historical source items are emitted into archive paths, not active work queues.
+- [ ] Entity IDs exported to runtime JSON are deterministic across preprocess reruns, or the pipeline provides an explicit migration/remap step.
+- [ ] Emitted task metadata preserves source timestamps/status separately from import-time metadata.
+- [ ] Runtime context exports are refreshed after enhanced-analysis merge so downstream flags remain truthful.
+- [ ] Relation extraction and metadata extraction reuse the same compatibility helper when they depend on the same source syntax.
 
 ---
 

@@ -9,6 +9,8 @@ import { initCommand } from './commands/init.js';
 import { convertCommand } from './commands/convert.js';
 import { applyCommand } from './commands/apply.js';
 import { preprocessCommand } from './commands/preprocess.js';
+import { postprocessCommand } from './commands/postprocess.js';
+import { validateCommand } from './commands/validate.js';
 import { versionCommand } from './commands/version.js';
 import { Logger, LogLevel } from '../core/logging/index.js';
 import { getVersionString } from '../core/version.js';
@@ -78,6 +80,13 @@ program
   .action(preprocessCommand);
 
 program
+  .command('postprocess')
+  .description('Generate deterministic grounded target specs after apply')
+  .option('-p, --project-path <path>', 'Project path (default: current directory)')
+  .option('-v, --verbose', 'Enable verbose logging')
+  .action(postprocessCommand);
+
+program
   .command('version')
   .description('Show or bump version')
   .option('-b, --bump', 'Bump version to next build')
@@ -88,12 +97,6 @@ program
   .description('Validate converted specs')
   .option('-p, --path <path>', 'Spec path to validate')
   .option('-v, --verbose', 'Enable verbose logging')
-  .action(async (options) => {
-    Logger.configure({
-      level: options.verbose ? LogLevel.DEBUG : LogLevel.INFO,
-      console: true,
-    });
-    console.log(chalk.yellow('validate command not yet implemented'));
-  });
+  .action(validateCommand);
 
 program.parse(process.argv);

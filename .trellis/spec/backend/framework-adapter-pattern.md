@@ -83,7 +83,14 @@ export abstract class BaseFrameworkAdapter implements FrameworkAdapter {
   protected abstract getReverseTypeMapping(): Record<CoreType, string[]>;
 
   protected generateId(prefix: string): string {
-    return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    // parse-time fallback only
+  }
+
+  protected generateStableId(
+    prefix: string,
+    ...parts: Array<string | number | boolean | null | undefined>
+  ): string {
+    // hash(prefix + stable seed)
   }
 }
 ```
@@ -126,9 +133,10 @@ Parse a single file to CoreEntity:
 async parseFile(filePath: string): Promise<CoreEntity> {
   const content = await fs.readFile(filePath, 'utf-8');
   const now = new Date().toISOString();
+  const metadata = this.parseMetadata(content, extendedType, filePath);
 
   return {
-    id: this.generateId(`openspec-${extendedType}`),
+    id: this.buildEntityId(filePath, extendedType, metadata),
     name: this.extractName(filePath),
     coreType: this.mapToCoreType(extendedType),
     extendedType,
@@ -187,6 +195,133 @@ async emit(entity: CoreEntity, targetPath: string): Promise<void> {
   await fs.writeFile(filePath, entity.content);
 }
 ```
+
+### Adapter Identity Rule
+
+`parseFile()` may use `generateId()` only as a true last-resort fallback. Adapters that parse persisted framework artifacts MUST derive entity identity from stable source references such as:
+
+- framework slug or manifest name
+- source-relative file path
+- task/spec directory key
+- target framework native ID in `task.json`
+
+---
+
+## Scenario: Deterministic Identity And Workflow-Target Emit
+
+### 1. Scope / Trigger
+
+- Trigger: An adapter parses persisted source files that later feed workspace JSON, relations, enhanced analysis, or target workflow tooling.
+- Trigger: An adapter emits into a workflow-driven target such as Trellis where downstream tools auto-read task directories, workflow files, and spec indexes.
+
+### 2. Signatures
+
+Relevant signatures in the current implementation:
+
+```typescript
+protected generateStableId(
+  prefix: string,
+  ...parts: Array<string | number | boolean | null | undefined>
+): string
+
+private buildEntityId(
+  filePath: string,
+  extendedType: string,
+  metadata?: Record<string, unknown>,
+): string
+
+private async ensureWorkflowSkeleton(targetPath: string): Promise<void>
+
+private async writeTaskContextFiles(
+  taskDir: string,
+  devType: 'backend' | 'frontend' | 'fullstack',
+): Promise<void>
+```
+
+### 3. Contracts
+
+- `buildEntityId(...)` MUST derive the same ID for the same source entity across parse reruns.
+- OpenSpec change IDs SHOULD prefer manifest slug or stable change directory reference over timestamps or process-local randomness.
+- Trellis task IDs SHOULD prefer task directory key or `task.json.id` over parse-time randomness.
+- Emitting into Trellis MUST create the minimum runtime skeleton if it does not already exist:
+  - `.trellis/workflow.md`
+  - `.trellis/spec/backend/index.md`
+  - `.trellis/spec/frontend/index.md`
+  - `.trellis/spec/guides/index.md`
+- Archived source work MUST emit into `.trellis/tasks/archive/<YYYY-MM>/<MM-DD-slug>/`.
+- Active work MUST emit into `.trellis/tasks/<MM-DD-slug>/`.
+- Every emitted Trellis task MUST include `implement.jsonl`, `check.jsonl`, and `debug.jsonl`.
+- Emit helpers may preserve existing bootstrap files, but they MUST NOT skip required runtime files altogether.
+
+### 4. Validation & Error Matrix
+
+| Condition | Expected behavior | Severity |
+|-----------|-------------------|----------|
+| Same source file parsed twice | Same `CoreEntity.id` is produced | error if unstable |
+| Target bootstrap file already exists | Preserve existing file, do not overwrite blindly | info |
+| Archived change emitted into active task root | Treat as incorrect adapter output | error |
+| Task emitted without context jsonl files | Treat as incorrect adapter output | error |
+| Adapter lacks stable seed for an entity | Use fallback ID only for non-persisted or non-contractual cases | warning |
+
+### 5. Good/Base/Bad Cases
+
+#### Good
+
+- OpenSpec adapter derives change IDs from `.openspec.yaml.name` or stable archive path, so rerunning `preprocess` keeps the same entity IDs.
+- Trellis adapter emits archive imports into `.trellis/tasks/archive/2026-04/04-01-xgit-auto-remote-push/` and writes all three context jsonl files.
+
+#### Base
+
+- Target project already contains `.trellis/workflow.md`; emit preserves it and creates only missing indexes or task runtime files.
+- A Trellis task parsed from `task.json.id` produces the same identity even if `prd.md` content changes.
+
+#### Bad
+
+- Adapter uses `Date.now()` or `Math.random()` in normal parse flow; existing enhanced-analysis data becomes unreachable after the next parse.
+- Archived imports land in `.trellis/tasks/<slug>/` and pollute active-task discovery.
+- Emitted task looks structurally present but lacks `implement.jsonl`, so downstream agents cannot inject the required context.
+
+### 6. Tests Required
+
+Required regression coverage:
+
+- `packages/cli/src/core/framework/adapters/openspec.test.ts`
+  - Assert repeated parses of the same fixture produce identical entity IDs.
+- `packages/cli/src/cli/commands/runtime-compat.test.ts`
+  - Assert archived OpenSpec changes emit into Trellis archive paths.
+  - Assert emitted Trellis tasks include `implement.jsonl`, `check.jsonl`, and `debug.jsonl`.
+- Framework-specific adapter tests
+  - Assert task/spec identity comes from stable source references rather than parse time.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+return {
+  id: this.generateId(`openspec-${extendedType}`),
+  // ...
+};
+```
+
+Why this is wrong:
+
+- Adapter identity depends on parse time instead of source identity.
+- Workspace JSON, enhanced analysis, and relations lose continuity on refresh.
+
+#### Correct
+
+```typescript
+return {
+  id: this.generateStableId('openspec-change', `change:${sourceSlug}`),
+  // ...
+};
+```
+
+Why this is correct:
+
+- Adapter identity is derived from a stable, reviewable source key.
+- Runtime workspace artifacts can be refreshed without semantic drift.
 
 ### 5. Type Mapping Methods
 

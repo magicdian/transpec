@@ -68,6 +68,20 @@ For each boundary:
 
 **Good**: Each layer only knows its neighbors
 
+### Mistake 4: Treating Generated Artifacts As "Just Output"
+
+**Bad**: Conversion writes the expected number of files, but the generated project is missing the runtime skeleton, archive placement, or metadata fields that downstream tools require.
+
+**Good**: Treat generated files as cross-layer contracts. Validate that parse output, runtime context JSON, emitted directories, and downstream workflow tooling all agree on paths, metadata, and task state.
+
+Checklist for generated workflow/runtime outputs:
+- [ ] If later tooling auto-injects `workflow.md` or `spec/*/index.md`, make sure conversion creates those files or preserves existing ones.
+- [ ] Historical imports must land in archive directories, not the active task pool.
+- [ ] Entity IDs consumed by later semantic steps stay stable across refreshes, or there is a defined remap/migration flow before reusing old analysis artifacts.
+- [ ] If a later step reads exported runtime JSON, refresh that JSON after semantic merges so flags like `hasEnhancedAnalysis` stay truthful.
+- [ ] Preserve source timestamps/status in dedicated fields; never overwrite them with import-time values only.
+- [ ] When metadata extraction and relation extraction depend on the same parse rule, route both through the same helper instead of duplicating regexes.
+
 ---
 
 ## Checklist for Cross-Layer Features
@@ -82,6 +96,7 @@ After implementation:
 - [ ] Tested with edge cases (null, empty, invalid)
 - [ ] Verified error handling at each boundary
 - [ ] Checked data survives round-trip
+- [ ] Verified generated output is consumable by the next workflow/tool layer, not just structurally present
 
 ---
 

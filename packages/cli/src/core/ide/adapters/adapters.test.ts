@@ -62,6 +62,7 @@ describe('IDE adapter generation', () => {
 
     expect(cursorPreprocess).toContain(options.preprocessSkillPath);
     expect(codexPreprocess).toContain(options.preprocessContextPath);
+    expect(codexPreprocess).toContain('transpec preprocess --skip-convert');
     expect(codexApply).toContain(options.postprocessSkillPath);
     expect(opencodePreprocess).toContain(options.enhancedAnalysisPath);
     expect(opencodeApply).toContain(options.postprocessContextPath);

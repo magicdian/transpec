@@ -26,14 +26,29 @@ describe('OpenSpecAdapter compatibility', () => {
 
     const legacyChange = entities.find(entity => entity.name === 'legacy style');
     const compactChange = entities.find(entity => entity.name === 'compact style');
-    const capabilitySpec = entities.find(entity => entity.extendedType === 'spec');
+    const compatibilitySpec = entities.find(entity => entity.extendedType === 'spec');
 
     expect(legacyChange?.metadata.requirementCount).toEqual({ added: 1, modified: 1 });
     expect(compactChange?.metadata.requirementCount).toEqual({ added: 1, modified: 1 });
-    expect(capabilitySpec?.content).toContain('### Stable Output');
+    expect(compatibilitySpec?.name).toBe('compatibility flow');
+    expect(compatibilitySpec?.content).toContain('### Stable Output');
     expect(compactChange?.metadata.subtasks).toEqual([
       { name: '1.1 Prepare runtime flow', status: 'completed' },
-      { name: '1.2 Verify compatibility', status: 'pending' },
+      { name: '2.1 Verify compatibility', status: 'pending' },
+      { name: '3. Documentation follow-up', status: 'pending' },
     ]);
+    expect(compactChange?.metadata.sourceStatus).toBe('draft');
+  });
+
+  it('should generate stable entity IDs across repeated parses', async () => {
+    const projectPath = await createTempDir('transpec-openspec-stable-ids-', tempDirs);
+    const adapter = new OpenSpecAdapter();
+
+    await createOpenSpecProject(projectPath, 'current');
+
+    const firstPass = await adapter.parseAll(projectPath);
+    const secondPass = await adapter.parseAll(projectPath);
+
+    expect(firstPass.map(entity => entity.id)).toEqual(secondPass.map(entity => entity.id));
   });
 });
