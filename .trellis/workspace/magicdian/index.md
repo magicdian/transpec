@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 16
+- **Total Sessions**: 17
 - **Last Active**: 2026-04-15
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~563 | Active |
+| `journal-1.md` | ~603 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 17 | 2026-04-15 | Add submodule update script | `e95f8cd`, `7766436`, `a307c3d` | `dev` |
 | 16 | 2026-04-15 | Archive v0.4.0 migration task | `b259b7e` | `dev` |
 | 15 | 2026-04-10 | Init menuconfig UX + logging contract | `0cc2db1`, `a8f12b9` |
 | 14 | 2026-04-10 | Fix transpec log persistence and logging code-spec | `1d01733` |

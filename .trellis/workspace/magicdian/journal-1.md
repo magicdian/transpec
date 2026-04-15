@@ -547,7 +547,10 @@ Verified the Trellis v0.4.0 migration state, confirmed trellis update --migrate 
 
 ### Main Changes
 
-(Add details)
+- Added `scripts/update_submodule.sh` as an executable repository helper for updating all configured submodules to their detected mainline branch.
+- Implemented safe behavior in the script: repo-root detection, `.gitmodules` discovery, submodule initialization, dirty-worktree guard, branch detection, fast-forward update, and parent-repo gitlink-only commit.
+- Ran the new script against the real local repository and confirmed it updated five submodule references and created conventional commit `e95f8cd`.
+- Archived the completed Trellis task at `.trellis/tasks/archive/2026-04/04-15-add-submodule-update-script/`.
 
 ### Git Commits
 
@@ -558,6 +561,43 @@ Verified the Trellis v0.4.0 migration state, confirmed trellis update --migrate 
 ### Testing
 
 - [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 17: Add submodule update script
+
+**Date**: 2026-04-15
+**Task**: Add submodule update script
+**Branch**: `dev`
+
+### Summary
+
+Added a repository-level update_submodule.sh helper, verified it against a real submodule refresh in the local repo, recorded the resulting conventional-commit submodule ref update, and archived the completed task.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e95f8cd` | `chore(submodules): update submodule refs` |
+| `7766436` | `feat(scripts): add submodule update helper` |
+| `a307c3d` | `chore(trellis): archive submodule update task` |
+
+### Testing
+
+- `bash -n scripts/update_submodule.sh`
+- Manual verification in local repo: `./scripts/update_submodule.sh`
+- Confirmed the script updated five submodule refs and created commit `e95f8cd`
 
 ### Status
 
