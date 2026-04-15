@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 15
-- **Last Active**: 2026-04-10
+- **Total Sessions**: 16
+- **Last Active**: 2026-04-15
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~530 | Active |
+| `journal-1.md` | ~563 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -27,8 +27,9 @@
 ## Session History
 
 <!-- @@@auto:session-history -->
-| # | Date | Title | Commits |
-|---|------|-------|---------|
+| # | Date | Title | Commits | Branch |
+|---|------|-------|---------|--------|
+| 16 | 2026-04-15 | Archive v0.4.0 migration task | `b259b7e` | `dev` |
 | 15 | 2026-04-10 | Init menuconfig UX + logging contract | `0cc2db1`, `a8f12b9` |
 | 14 | 2026-04-10 | Fix transpec log persistence and logging code-spec | `1d01733` |
 | 13 | 2026-04-10 | Align agent-driven Transpec workflow | `ccb5362` |

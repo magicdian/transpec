@@ -19,7 +19,10 @@ Ran transpec convert, migrated OpenSpec tasks to
 
 ### Main Changes
 
-(Add details)
+- Reviewed the existing migration PRD and task state for `.trellis/tasks/04-15-migrate-to-0.4.0`.
+- Confirmed the local workspace already uses unified Codex skills (`before-dev` and `check`) with no legacy skill files requiring manual merge.
+- Ran `trellis update --migrate` and verified the project was already aligned with Trellis `0.4.0`.
+- Updated the task record, archived it under `.trellis/tasks/archive/2026-04/04-15-migrate-to-0.4.0/`, and cleared the current task pointer.
 
 ### Git Commits
 
@@ -27,7 +30,9 @@ Ran transpec convert, migrated OpenSpec tasks to
 
 ### Testing
 
-- [OK] (Add test results)
+- `trellis update --migrate` reported `Already up to date!`
+- `pnpm --dir packages/cli exec tsc --noEmit`
+- `pnpm --dir packages/cli exec vitest run` passed: 5 files, 14 tests
 
 ### Status
 
@@ -516,6 +521,39 @@ Reworked transpec init into menuconfig-style keyboard UI, fixed Esc latency, add
 |------|---------|
 | `0cc2db1` | (see git log) |
 | `a8f12b9` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 16: Archive v0.4.0 migration task
+
+**Date**: 2026-04-15
+**Task**: Archive v0.4.0 migration task
+**Branch**: `dev`
+
+### Summary
+
+Verified the Trellis v0.4.0 migration state, confirmed trellis update --migrate is already up to date, archived the completed migration task, and recorded the result in workspace history.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b259b7e` | (see git log) |
 
 ### Testing
 
