@@ -1,0 +1,4 @@
+{"file": ".opencode/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".opencode/commands/trellis/check.md", "reason": "Code quality check spec"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Verify failure cases and exit codes for the new shell script"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Review script quality and repo-safety expectations"}
