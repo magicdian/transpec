@@ -7,10 +7,17 @@
 
 ## Status
 
-- [ ] Review migration guide
-- [ ] Update custom files
-- [ ] Run `trellis update --migrate`
-- [ ] Test workflows
+- [x] Review migration guide
+- [x] Update custom files
+- [x] Run `trellis update --migrate`
+- [x] Test workflows
+
+## Execution Notes
+
+- Confirmed the workspace already uses unified Codex skills: `before-dev` and `check`.
+- Ran `trellis update --migrate`; the CLI reported `Already up to date!`.
+- Verified user data paths remained preserved during the update scan.
+- No custom-file merge was required for the current workspace.
 
 ---
 
@@ -66,4 +73,3 @@ When helping users migrate to v0.4.0-beta.1:
 2. **If customized**: Help merge their customizations into the new unified `before-dev` and `check` files. The new files use `python3 ./.trellis/scripts/get_context.py --mode packages` to auto-detect which specs to load, replacing the hardcoded backend/frontend split.
 3. **If not customized**: Just run `trellis update` — safe-file-delete will handle cleanup automatically.
 4. **Python scripts**: No user action needed. The refactoring preserves all entry paths. If the user has custom scripts that import from `.trellis/scripts/common/`, they may need to update imports (e.g., `from common.io import read_json` instead of inline `_read_json_file`).
-
