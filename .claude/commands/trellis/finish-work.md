@@ -8,23 +8,6 @@ Before submitting or committing, use this checklist to ensure work completeness.
 
 ## Checklist
 
-### 0. Version Bump (REQUIRED - Before any code change commit)
-
-Every product code change (feature or bugfix) must update the version FIRST.
-
-```bash
-cd packages/cli
-transpec version --bump
-```
-
-**Rules:**
-- If date matches today → build number + 1
-- If date differs → build number = 1, date version updates to today
-
-**Format:** `YYMM.dd.BuildNumber` (e.g., `2604.9.1` = 2026-04-09, build 1)
-
-- [ ] Version bumped?
-
 ### 1. Code Quality
 
 ```bash
