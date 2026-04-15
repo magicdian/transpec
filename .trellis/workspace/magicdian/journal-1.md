@@ -606,3 +606,59 @@ Added a repository-level update_submodule.sh helper, verified it against a real 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 18: Submodule compatibility hardening
+
+**Date**: 2026-04-15
+**Task**: Submodule compatibility hardening
+**Branch**: `dev`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+| Area | Description |
+|------|-------------|
+| OpenSpec compatibility | Centralized requirement heading parsing so both legacy `### Requirement: ...` and current compact `### ...` forms work, while fenced code examples are ignored. |
+| Trellis compatibility | Added regression coverage for legacy single-repo and current package-scoped Trellis layouts, including modern task lifecycle metadata such as `current_phase`, `next_action`, and `children`. |
+| Runtime flow | Added end-to-end compatibility smoke tests covering `convert -> preprocess -> apply` for OpenSpec↔Trellis across legacy/current fixtures. |
+| Code-spec updates | Documented the compatibility strategy and fixture-matrix testing contract in backend adapter and testing specs. |
+
+**Updated Files**:
+- `.trellis/spec/backend/framework-adapter-pattern.md`
+- `.trellis/spec/backend/testing-guidelines.md`
+- `packages/cli/src/core/framework/adapters/openspec-format.ts`
+- `packages/cli/src/core/framework/adapters/openspec-format.test.ts`
+- `packages/cli/src/core/framework/adapters/openspec.test.ts`
+- `packages/cli/src/core/framework/adapters/trellis.test.ts`
+- `packages/cli/src/core/engine/engine.ts`
+- `packages/cli/src/core/framework/adapters/openspec.ts`
+- `packages/cli/src/core/skill/preprocess-skills/openspec/SKILL.md`
+- `packages/cli/src/cli/commands/runtime-compat.test.ts`
+- `packages/cli/src/test/compat-fixtures.ts`
+
+**Verification**:
+- `./node_modules/.bin/vitest run`
+- `./node_modules/.bin/tsc --noEmit -p tsconfig.json`
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3d440df6ee408863a6ab90cca39938d2ea50ad88` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
