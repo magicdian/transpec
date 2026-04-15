@@ -583,7 +583,10 @@ Added a repository-level update_submodule.sh helper, verified it against a real 
 
 ### Main Changes
 
-(Add details)
+- Added stable entity ID generation for OpenSpec and Trellis adapters so repeated parses keep the same identifiers.
+- Reconciled `enhanced-analysis.json` back into preprocess/apply, including stale ID recovery from prior preprocess context and `.transpec/logs/transpec.log`.
+- Added deterministic Trellis postprocess output plus a real `validate` command covering runtime skeleton, relations, enhanced-analysis sync, archive placement, task fields, context jsonl, and grounded specs.
+- Expanded compatibility and conversion tests, and updated backend conversion/code-spec docs to match the new pipeline behavior.
 
 ### Git Commits
 
@@ -650,6 +653,42 @@ Added a repository-level update_submodule.sh helper, verified it against a real 
 | Hash | Message |
 |------|---------|
 | `3d440df6ee408863a6ab90cca39938d2ea50ad88` | (see git log) |
+
+### Testing
+
+- [OK] `npx tsc --noEmit` in `packages/cli`
+- [OK] `npm test -- --run` in `packages/cli` (`11` files, `34` tests passed)
+- [OK] `npm run build` in `packages/cli`
+- [INFO] A later `transpec validate -p /Users/magicdian/Documents/personal_project/xgit` rerun reported missing generated workspace artifacts because that target project no longer had the full converted output on disk at verification time.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 19: Stabilize OpenSpec to Trellis Conversion
+
+**Date**: 2026-04-15
+**Task**: Stabilize OpenSpec to Trellis Conversion
+**Branch**: `dev`
+
+### Summary
+
+Implemented deterministic OpenSpec/Trellis entity IDs, reconciled enhanced-analysis back into preprocess/apply, added deterministic Trellis postprocess and validate commands, expanded conversion/runtime compatibility coverage, and updated backend conversion specs for the new pipeline.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `be99db7` | (see git log) |
 
 ### Testing
 
