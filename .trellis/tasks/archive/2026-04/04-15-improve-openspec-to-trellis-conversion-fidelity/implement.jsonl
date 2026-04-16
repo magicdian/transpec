@@ -1,0 +1,7 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/conversion-pipeline.md", "reason": "Conversion runtime contract and deterministic target output responsibilities"}
+{"file": ".trellis/spec/backend/framework-adapter-pattern.md", "reason": "Adapter parse/emit identity and Trellis workflow target contracts"}
+{"file": ".trellis/spec/backend/ir-design-principles.md", "reason": "Preserve source provenance and stable IR semantics across preprocess/apply"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Conversion output is a runtime contract, not decorative output"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Reuse existing task/local signal heuristics and avoid duplicate parse rules"}
