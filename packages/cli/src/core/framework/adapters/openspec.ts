@@ -28,6 +28,7 @@ import { BaseFrameworkAdapter, FrameworkDetails } from '../base-adapter.js';
 import { CoreEntity, CoreType, FrameworkType } from '../../ir/types.js';
 import { getLogger, LogModules } from '../../logging/index.js';
 import { countOpenSpecRequirements } from './openspec-format.js';
+import { ParsedTaskStructure, parseTaskStructure } from '../task-structure.js';
 
 const logger = getLogger(LogModules.ADAPTER);
 
@@ -97,6 +98,9 @@ export class OpenSpecAdapter extends BaseFrameworkAdapter {
     // Parse metadata from content
     const metadata = this.parseMetadata(content, extendedType, filePath);
 
+    const createdAt = (metadata.createdAt as string) || now;
+    const updatedAt = (metadata.updatedAt as string) || createdAt;
+
     return {
       id: this.buildEntityId(filePath, extendedType),
       name,
@@ -106,8 +110,8 @@ export class OpenSpecAdapter extends BaseFrameworkAdapter {
       metadata,
       sourceFramework: 'openspec',
       sourcePath: filePath,
-      createdAt: (metadata.createdAt as string) || now,
-      updatedAt: now
+      createdAt,
+      updatedAt,
     };
   }
 
@@ -188,9 +192,17 @@ export class OpenSpecAdapter extends BaseFrameworkAdapter {
 
       // Parse tasks.md if exists and attach subtasks
       try {
-        const { subtasks } = await this.parseTasksFile(tasksFile);
-        entity.metadata.subtasks = subtasks;
-        logger.debug('Parsed tasks', { name: entity.name, tasks: subtasks.length });
+        const tasksContent = await fs.readFile(tasksFile, 'utf-8');
+        const parsedTasks = this.parseTasksContent(tasksContent, tasksFile);
+        entity.metadata.tasksContent = tasksContent;
+        entity.metadata.hasTasksFile = true;
+        entity.metadata.subtasks = parsedTasks.subtasks;
+        entity.metadata.sourceTaskSummary = parsedTasks.summary;
+        entity.metadata.sourceAcceptanceCriteria = parsedTasks.acceptanceCriteria;
+        entity.metadata.sourceFollowUpSuggestions = parsedTasks.followUpSuggestions;
+        entity.metadata.sourceTaskEstimates = parsedTasks.estimates;
+        entity.metadata.sourceTaskSections = parsedTasks.sections;
+        logger.debug('Parsed tasks', { name: entity.name, tasks: parsedTasks.subtasks.length, sections: parsedTasks.sections.length });
       } catch {
         logger.debug('No tasks.md found', { changeDir });
       }
@@ -199,6 +211,7 @@ export class OpenSpecAdapter extends BaseFrameworkAdapter {
       try {
         const designContent = await fs.readFile(designFile, 'utf-8');
         entity.metadata.designContent = designContent;
+        entity.metadata.hasDesignFile = true;
       } catch {
         logger.debug('No design.md found', { changeDir });
       }
@@ -232,13 +245,20 @@ export class OpenSpecAdapter extends BaseFrameworkAdapter {
       try {
         const entity = await this.parseFile(proposalFile);
         entity.metadata.isArchived = true;
-        entity.metadata.archivedAt = stat.mtime.toISOString();
 
         // Parse tasks.md if exists and attach subtasks
         try {
-          const { subtasks } = await this.parseTasksFile(tasksFile);
-          entity.metadata.subtasks = subtasks;
-          logger.debug('Parsed archived tasks', { name: entity.name, tasks: subtasks.length });
+          const tasksContent = await fs.readFile(tasksFile, 'utf-8');
+          const parsedTasks = this.parseTasksContent(tasksContent, tasksFile);
+          entity.metadata.tasksContent = tasksContent;
+          entity.metadata.hasTasksFile = true;
+          entity.metadata.subtasks = parsedTasks.subtasks;
+          entity.metadata.sourceTaskSummary = parsedTasks.summary;
+          entity.metadata.sourceAcceptanceCriteria = parsedTasks.acceptanceCriteria;
+          entity.metadata.sourceFollowUpSuggestions = parsedTasks.followUpSuggestions;
+          entity.metadata.sourceTaskEstimates = parsedTasks.estimates;
+          entity.metadata.sourceTaskSections = parsedTasks.sections;
+          logger.debug('Parsed archived tasks', { name: entity.name, tasks: parsedTasks.subtasks.length, sections: parsedTasks.sections.length });
         } catch {
           logger.debug('No tasks.md found in archive', { changeDir });
         }
@@ -247,6 +267,7 @@ export class OpenSpecAdapter extends BaseFrameworkAdapter {
         try {
           const designContent = await fs.readFile(designFile, 'utf-8');
           entity.metadata.designContent = designContent;
+          entity.metadata.hasDesignFile = true;
         } catch {
           logger.debug('No design.md found in archive', { changeDir });
         }
@@ -308,91 +329,22 @@ export class OpenSpecAdapter extends BaseFrameworkAdapter {
   }
 
   /**
-   * Parse tasks.md file and extract subtasks from checkbox items
+   * Parse tasks.md and preserve both checkbox subtasks and higher-level task structure.
    */
-  async parseTasksFile(filePath: string): Promise<{ subtasks: Array<{ name: string; status: string }> }> {
+  async parseTasksFile(filePath: string): Promise<ParsedTaskStructure> {
     const content = await fs.readFile(filePath, 'utf-8');
-    const subtasks: Array<{ name: string; status: string }> = [];
-    const seen = new Set<string>();
-    const lines = content.split(/\r?\n/);
+    return this.parseTasksContent(content, filePath);
+  }
 
-    let currentSection: {
-      number: string;
-      title: string;
-      checkboxStatuses: string[];
-      hasStructuredDetails: boolean;
-    } | null = null;
-
-    const pushSubtask = (name: string, status: string): void => {
-      const key = `${name}::${status}`;
-      if (seen.has(key)) {
-        return;
-      }
-      seen.add(key);
-      subtasks.push({ name, status });
-    };
-
-    const flushSection = (): void => {
-      if (!currentSection || !currentSection.hasStructuredDetails) {
-        currentSection = null;
-        return;
-      }
-
-      const status = this.deriveSectionStatus(currentSection.checkboxStatuses);
-      pushSubtask(`${currentSection.number}. ${currentSection.title}`, status);
-      currentSection = null;
-    };
-
-    for (const line of lines) {
-      const sectionMatch = line.match(/^(\d+)\.\s+(.+)$/);
-      if (sectionMatch) {
-        flushSection();
-        currentSection = {
-          number: sectionMatch[1],
-          title: sectionMatch[2].trim(),
-          checkboxStatuses: [],
-          hasStructuredDetails: false,
-        };
-        continue;
-      }
-
-      const checkboxMatch = line.match(/^\s*-\s\[([ xX])\]\s*(\d+\.\d+(?:\.\d+)?)?\s*(.+?)\s*$/);
-      if (checkboxMatch) {
-        const status = checkboxMatch[1].toLowerCase() === 'x' ? 'completed' : 'pending';
-        const number = checkboxMatch[2] || '';
-        const description = checkboxMatch[3].trim();
-
-        if (currentSection) {
-          currentSection.checkboxStatuses.push(status);
-        }
-
-        pushSubtask(number ? `${number} ${description}` : description, status);
-        continue;
-      }
-
-      if (!currentSection) {
-        continue;
-      }
-
-      const trimmed = line.trim();
-      if (!trimmed) {
-        continue;
-      }
-
-      if (trimmed.startsWith('- ')) {
-        currentSection.hasStructuredDetails = true;
-        continue;
-      }
-
-      if (!/^估时[:：]/.test(trimmed)) {
-        currentSection.hasStructuredDetails = true;
-      }
-    }
-
-    flushSection();
-
-    logger.debug('Parsed tasks.md', { filePath, subtasks: subtasks.length });
-    return { subtasks };
+  private parseTasksContent(content: string, filePath: string): ParsedTaskStructure {
+    const parsedTasks = parseTaskStructure(content);
+    logger.debug('Parsed tasks.md', {
+      filePath,
+      subtasks: parsedTasks.subtasks.length,
+      sections: parsedTasks.sections.length,
+      estimates: parsedTasks.estimates.length,
+    });
+    return parsedTasks;
   }
 
   private parseMetadata(content: string, extendedType: string, filePath: string): Record<string, unknown> {
@@ -441,21 +393,6 @@ export class OpenSpecAdapter extends BaseFrameworkAdapter {
     return metadata;
   }
 
-  private deriveSectionStatus(checkboxStatuses: string[]): string {
-    if (checkboxStatuses.length === 0) {
-      return 'pending';
-    }
-
-    const completedCount = checkboxStatuses.filter(status => status === 'completed').length;
-    if (completedCount === 0) {
-      return 'pending';
-    }
-    if (completedCount === checkboxStatuses.length) {
-      return 'completed';
-    }
-    return 'in_progress';
-  }
-
   private async attachChangeManifest(changeDir: string, entity: CoreEntity): Promise<void> {
     const manifestPath = path.join(changeDir, '.openspec.yaml');
 
@@ -469,6 +406,8 @@ export class OpenSpecAdapter extends BaseFrameworkAdapter {
       const record = manifest as Record<string, unknown>;
       entity.metadata.changeManifest = record;
       entity.metadata.changeManifestPath = manifestPath;
+      entity.metadata.changeManifestContent = manifestContent;
+      entity.metadata.hasManifestFile = true;
 
       if (typeof record.name === 'string') {
         entity.metadata.sourceSlug = record.name;
@@ -488,6 +427,16 @@ export class OpenSpecAdapter extends BaseFrameworkAdapter {
       if (typeof record.createdAt === 'string') {
         entity.metadata.createdAt = record.createdAt;
         entity.createdAt = record.createdAt;
+      }
+      if (typeof record.updatedAt === 'string') {
+        entity.metadata.updatedAt = record.updatedAt;
+        entity.updatedAt = record.updatedAt;
+      }
+      if (typeof record.archivedAt === 'string') {
+        entity.metadata.archivedAt = record.archivedAt;
+      }
+      if (typeof record.completedAt === 'string' && typeof entity.metadata.archivedAt !== 'string') {
+        entity.metadata.archivedAt = record.completedAt;
       }
     } catch {
       logger.debug('No .openspec.yaml found', { changeDir });

@@ -243,6 +243,17 @@ entity.metadata = {
   isArchived: boolean,
   archivedAt: string,
   subtasks: Array<{ name: string; status: string }>,
+  sourceTaskSummary: string | null,
+  sourceAcceptanceCriteria: string[],
+  sourceFollowUpSuggestions: string[],
+  sourceTaskEstimates: Array<{ scope: string | null, value: string }>,
+  sourceTaskSections: Array<{
+    title: string,
+    level: number,
+    kind: string,
+    content: string,
+    items: string[],
+  }>,
   designContent: string,
   requirementCount: { added: number, modified: number }
 };
@@ -250,6 +261,11 @@ entity.metadata = {
 // Trellis task metadata
 entity.metadata = {
   taskJson: { /* full task.json contents */ },
+  sourceTaskSummary: string | null,
+  sourceAcceptanceCriteria: string[],
+  sourceFollowUpSuggestions: string[],
+  sourceTaskEstimates: Array<{ scope: string | null, value: string }>,
+  sourceTaskSections: Array<Record<string, unknown>>,
   date: string,
   status: string,
   priority: string,

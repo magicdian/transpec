@@ -9,6 +9,7 @@ import {
 import { buildInitConfigYaml } from '../cli/commands/init.js';
 
 export type FrameworkVariant = 'legacy' | 'current';
+export type OpenSpecProfile = 'default' | 'terminal-ui' | 'interactive-cli';
 
 export async function createTempDir(prefix: string, tempDirs: string[]): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
@@ -106,18 +107,53 @@ export async function createOpenSpecProject(
   projectPath: string,
   variant: FrameworkVariant,
   location: 'active' | 'archive' = 'active',
+  profile: OpenSpecProfile = 'default',
 ): Promise<void> {
   await writeFixtureFile(projectPath, 'openspec/config.yaml', 'name: sample\n');
+  const isTerminalUiProfile = profile === 'terminal-ui';
+  const isInteractiveCliProfile = profile === 'interactive-cli';
+  const specSlug = isTerminalUiProfile
+    ? 'interactive-setup'
+    : isInteractiveCliProfile
+      ? 'guided-cli-install'
+      : 'compatibility-flow';
+  const specTitle = isTerminalUiProfile
+    ? 'Interactive Setup'
+    : isInteractiveCliProfile
+      ? 'Guided CLI Install'
+      : 'Compatibility Flow';
   await writeFixtureFile(
     projectPath,
-    'openspec/specs/compatibility-flow/spec.md',
+    `openspec/specs/${specSlug}/spec.md`,
     variant === 'legacy'
-      ? '# Compatibility Flow\n\n### Requirement: Stable Output\nThe system SHALL stay stable.\n'
-      : '# Compatibility Flow\n\n### Stable Output\nThe system SHALL stay stable.\n',
+      ? `# ${specTitle}\n\n### Requirement: Stable Output\nThe system SHALL stay stable.\n`
+      : `# ${specTitle}\n\n### Stable Output\nThe system SHALL stay stable.\n`,
   );
 
-  const changeBody = variant === 'legacy'
-    ? `# Legacy Style Change
+  const changeBody = isTerminalUiProfile
+    ? `# Interaction Setup Navigation
+
+## ADDED Requirements
+### Terminal Setup UI
+The system SHALL support menuconfig-style terminal setup navigation.
+
+## MODIFIED Requirements
+### Interactive Help Panel
+The system SHALL show contextual help inside setup menus.
+`
+    : isInteractiveCliProfile
+      ? `# Guided CLI Install
+
+## ADDED Requirements
+### Interactive Install Prompt
+The system SHALL show an interactive terminal confirmation prompt before installing shell completion.
+
+## MODIFIED Requirements
+### Help Output
+The system SHALL print follow-up help text after the guided install completes.
+`
+    : variant === 'legacy'
+      ? `# Legacy Style Change
 
 ## ADDED Requirements
 ### Requirement: Legacy Header
@@ -138,9 +174,13 @@ The system SHALL accept compact requirement headings within the compatibility fl
 The system SHALL keep compact modified headings compatible within the compatibility flow.
 `;
 
-  const changeSlug = variant === 'legacy'
-    ? '2026-04-15-legacy-style'
-    : '2026-04-15-compact-style';
+  const changeSlug = isTerminalUiProfile
+    ? '2026-04-15-interaction-setup-navigation'
+    : isInteractiveCliProfile
+      ? '2026-04-15-guided-cli-install'
+    : variant === 'legacy'
+      ? '2026-04-15-legacy-style'
+      : '2026-04-15-compact-style';
   const changeBaseDir = location === 'archive'
     ? `openspec/changes/archive/${changeSlug}`
     : `openspec/changes/${changeSlug}`;
@@ -160,7 +200,38 @@ This should stay invisible to the parser.
   await writeFixtureFile(
     projectPath,
     `${changeBaseDir}/tasks.md`,
-    `# tasks for ${changeSlug}
+    isTerminalUiProfile
+      ? `# tasks for ${changeSlug}
+
+## 概览
+重构交互式 setup 为单栏、逐级进入的 terminal UI，并补充 contextual help。
+
+## 任务清单
+1. Setup navigation
+   - [x] 1.1 Convert setup to hierarchical terminal UI
+   - 估时：0.5 天
+2. Help panel
+   - [ ] 2.1 Add contextual help panel
+
+## 验收准则
+- setup 菜单支持进入、返回与快捷键提示
+
+## 后续可选任务
+- add locale-specific help copy
+`
+      : isInteractiveCliProfile
+        ? `# tasks for ${changeSlug}
+
+## 概览
+为 CLI 增加 interactive install prompt 与 help output，保持命令式确认流转。
+
+## 任务清单
+1. Install prompt
+   - [x] 1.1 Add interactive confirmation prompt for shell completion installation
+2. Follow-up help
+   - [ ] 2.1 Print guided help after installation completes
+`
+      : `# tasks for ${changeSlug}
 
 1. Runtime flow
    - [x] 1.1 Prepare runtime flow
@@ -173,10 +244,10 @@ This should stay invisible to the parser.
   await writeFixtureFile(
     projectPath,
     `${changeBaseDir}/.openspec.yaml`,
-    `name: ${variant === 'legacy' ? 'legacy-style' : 'compact-style'}
-title: ${variant === 'legacy' ? 'Legacy Style Change' : 'Compact Style Change'}
+    `name: ${isTerminalUiProfile ? 'interaction-setup-navigation' : isInteractiveCliProfile ? 'guided-cli-install' : variant === 'legacy' ? 'legacy-style' : 'compact-style'}
+title: ${isTerminalUiProfile ? 'Interaction Setup Navigation' : isInteractiveCliProfile ? 'Guided CLI Install' : variant === 'legacy' ? 'Legacy Style Change' : 'Compact Style Change'}
 owner: TBD
-description: Preserve OpenSpec compatibility through Trellis conversion.
+description: ${isTerminalUiProfile ? 'Refine setup terminal UI navigation and contextual help.' : isInteractiveCliProfile ? 'Add guided CLI installation prompts and follow-up help output.' : 'Preserve OpenSpec compatibility through Trellis conversion.'}
 status: draft
 `,
   );

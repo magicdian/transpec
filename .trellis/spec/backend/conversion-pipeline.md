@@ -591,6 +591,13 @@ Rules:
 - Deterministic emit/postprocess owns these files. Optional agent postprocess may refine them but must not be their only source.
 - Archived OpenSpec changes must land under `.trellis/tasks/archive/`, not the active task pool.
 - Grounded docs under `.trellis/spec/` are minimum runtime artifacts for Trellis workflow consumption, not purely decorative output.
+- When source `tasks.md` contains structured sections, emitted `task.json.meta` must also preserve:
+  - `sourceTaskSummary`
+  - `sourceAcceptanceCriteria`
+  - `sourceFollowUpSuggestions`
+  - `sourceTaskEstimates`
+  - `sourceTaskSections`
+- `task.json.description` may fall back to `sourceTaskSummary` only when the source manifest does not provide a better description.
 
 #### 3.6 RAW IR database path
 
@@ -619,6 +626,7 @@ Rules:
 | `apply` → workspace sync | `preprocess-context.json` rewritten after merge | `validate` reports stale `hasEnhancedAnalysis` if skipped |
 | `apply` → transform/emit | `runTransformEmit()` returns success or issues | Print issues and continue only when engine reports non-fatal warnings |
 | `apply` → deterministic postprocess | target bootstrap files, task runtime files, and grounded docs exist | `validate` reports missing runtime artifacts |
+| `apply` → structured task metadata | source `tasks.md` sections survive into `task.json.meta.sourceTask*` fields | `validate` reports `missing_structured_tasks_metadata` |
 | `validate` → Trellis runtime | archive placement, task fields, and grounded specs are all present | Fail command with explicit issue codes |
 
 ### 5. Good/Base/Bad Cases
@@ -627,6 +635,7 @@ Rules:
 
 - `transpec preprocess` reruns on the same OpenSpec project and keeps or reconciles entity IDs so `hasEnhancedAnalysis` stays accurate.
 - `transpec apply` imports enhanced analysis for every entity, emits archive tasks plus runtime jsonl files, runs deterministic Trellis postprocess, and `transpec validate` passes.
+- OpenSpec source includes acceptance criteria and follow-up work in `tasks.md`; emitted Trellis task preserves them under `task.json.meta.sourceTask*` without requiring downstream markdown re-parse.
 
 #### Base
 
@@ -649,6 +658,9 @@ Rules:
 - runtime correctness is delegated to an optional postprocess skill
 - Result:
   - target appears converted but Trellis start/init-context cannot consume it reliably when the skill is skipped
+- `source-tasks.md` is copied as a raw file, but `task.json.meta` drops all structured task sections
+- Result:
+  - converted task keeps the file for humans, but agents and validators lose access to acceptance criteria, estimates, and follow-up items
 
 ### 6. Tests Required
 
@@ -669,6 +681,7 @@ Required regression coverage:
   - Assert `init -> preprocess -> apply -> validate` succeeds in a temp project.
   - Assert `.transpec/ir/conversion.db`, preprocess context, enhanced analysis file, and postprocess context all exist at the expected points.
   - Assert Trellis bootstrap files, grounded docs, archive placement, and task runtime jsonl files exist after apply.
+  - Assert structured `tasks.md` sections appear in emitted `task.json.meta.sourceTask*`.
 
 ### 7. Wrong vs Correct
 

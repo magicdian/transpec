@@ -77,4 +77,109 @@ describe('conversion validation', () => {
     expect(result.success).toBe(false);
     expect(result.issues.some(issue => issue.code === 'enhanced_analysis_id_mismatch')).toBe(true);
   });
+
+  it('should fail when source tasks.md was not preserved as a Trellis artifact', async () => {
+    const projectPath = await createTempDir('transpec-validate-missing-source-tasks-', tempDirs);
+    await createOpenSpecProject(projectPath, 'current', 'archive');
+    await setupTranspecConfig(projectPath, 'openspec', 'trellis');
+
+    await preprocessCommand({ projectPath });
+    await seedEnhancedAnalysis(projectPath);
+    await applyCommand({ projectPath });
+
+    await fs.rm(
+      path.join(projectPath, '.trellis', 'tasks', 'archive', '2026-04', '04-15-compact-style', 'source-tasks.md'),
+      { force: true },
+    );
+
+    const result = await validateConvertedProject(projectPath);
+    expect(result.success).toBe(false);
+    expect(result.issues.some(issue => issue.code === 'missing_preserved_tasks_artifact')).toBe(true);
+  });
+
+  it('should warn when a UI-heavy task loses frontend context', async () => {
+    const projectPath = await createTempDir('transpec-validate-ui-context-', tempDirs);
+    await createOpenSpecProject(projectPath, 'current', 'archive', 'terminal-ui');
+    await setupTranspecConfig(projectPath, 'openspec', 'trellis');
+
+    await preprocessCommand({ projectPath });
+    await seedEnhancedAnalysis(projectPath);
+    await applyCommand({ projectPath });
+
+    const taskDir = path.join(projectPath, '.trellis', 'tasks', 'archive', '2026-04', '04-15-interaction-setup-navigation');
+    await fs.writeFile(
+      path.join(taskDir, 'implement.jsonl'),
+      `${JSON.stringify({ file: '.trellis/workflow.md', reason: 'Project workflow and conventions' })}\n${JSON.stringify({ file: '.trellis/spec/backend/index.md', reason: 'Backend development guide' })}\n`,
+    );
+    const taskJsonPath = path.join(taskDir, 'task.json');
+    const taskJson = JSON.parse(await fs.readFile(taskJsonPath, 'utf-8')) as Record<string, unknown>;
+    taskJson.dev_type = 'backend';
+    await fs.writeFile(taskJsonPath, JSON.stringify(taskJson, null, 2));
+
+    const result = await validateConvertedProject(projectPath);
+    expect(result.issues.some(issue => issue.code === 'ui_task_dev_type_degraded')).toBe(true);
+    expect(result.issues.some(issue => issue.code === 'ui_task_missing_frontend_context')).toBe(true);
+  });
+
+  it('should not warn for interactive CLI tasks that do not have UI/TUI surfaces', async () => {
+    const projectPath = await createTempDir('transpec-validate-interactive-cli-', tempDirs);
+    await createOpenSpecProject(projectPath, 'current', 'archive', 'interactive-cli');
+    await setupTranspecConfig(projectPath, 'openspec', 'trellis');
+
+    await preprocessCommand({ projectPath });
+    await seedEnhancedAnalysis(projectPath);
+    await applyCommand({ projectPath });
+
+    const result = await validateConvertedProject(projectPath);
+    expect(result.issues.some(issue => issue.code === 'ui_task_dev_type_degraded')).toBe(false);
+    expect(result.issues.some(issue => issue.code === 'ui_task_missing_frontend_context')).toBe(false);
+  });
+
+  it('should warn when structured tasks.md metadata was not preserved into task.json meta', async () => {
+    const projectPath = await createTempDir('transpec-validate-structured-tasks-', tempDirs);
+    await createOpenSpecProject(projectPath, 'current', 'archive', 'terminal-ui');
+    await setupTranspecConfig(projectPath, 'openspec', 'trellis');
+
+    await preprocessCommand({ projectPath });
+    await seedEnhancedAnalysis(projectPath);
+    await applyCommand({ projectPath });
+
+    const taskJsonPath = path.join(
+      projectPath,
+      '.trellis',
+      'tasks',
+      'archive',
+      '2026-04',
+      '04-15-interaction-setup-navigation',
+      'task.json',
+    );
+    const taskJson = JSON.parse(await fs.readFile(taskJsonPath, 'utf-8')) as { meta: Record<string, unknown> };
+    delete taskJson.meta.sourceTaskSummary;
+    delete taskJson.meta.sourceAcceptanceCriteria;
+    delete taskJson.meta.sourceFollowUpSuggestions;
+    delete taskJson.meta.sourceTaskSections;
+    await fs.writeFile(taskJsonPath, JSON.stringify(taskJson, null, 2));
+
+    const result = await validateConvertedProject(projectPath);
+    expect(result.issues.some(issue => issue.code === 'missing_structured_tasks_metadata')).toBe(true);
+  });
+
+  it('should warn when repository state guide still claims scripts are missing after Trellis bootstrap is installed', async () => {
+    const projectPath = await createTempDir('transpec-validate-stale-guide-', tempDirs);
+    await createOpenSpecProject(projectPath, 'current');
+    await setupTranspecConfig(projectPath, 'openspec', 'trellis');
+
+    await preprocessCommand({ projectPath });
+    await seedEnhancedAnalysis(projectPath);
+    await applyCommand({ projectPath });
+
+    await fs.mkdir(path.join(projectPath, '.trellis', 'scripts'), { recursive: true });
+    await fs.writeFile(
+      path.join(projectPath, '.trellis', 'spec', 'guides', 'repository-and-conversion-state.md'),
+      'The repo is converted, but there is no `.trellis/scripts/` directory in the current repo.\n',
+    );
+
+    const result = await validateConvertedProject(projectPath);
+    expect(result.issues.some(issue => issue.code === 'stale_repository_state_guide')).toBe(true);
+  });
 });

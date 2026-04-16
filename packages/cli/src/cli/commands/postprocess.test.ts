@@ -49,5 +49,9 @@ describe('postprocess command', () => {
     await expect(fs.access(guidesDoc)).resolves.toBeUndefined();
     const regeneratedBackendFiles = (await fs.readdir(backendDir)).filter(file => file !== 'index.md');
     expect(regeneratedBackendFiles.length).toBeGreaterThan(0);
+
+    const guideContent = await fs.readFile(guidesDoc, 'utf-8');
+    expect(guideContent).toContain('trellis update');
+    expect(guideContent).toContain('trellis init');
   });
 });

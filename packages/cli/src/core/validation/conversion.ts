@@ -1,6 +1,9 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { parse as parseYaml } from 'yaml';
 import { loadProjectConfig } from '../../cli/utils/project-config.js';
+import { hasStructuredTaskContent, parseTaskStructure } from '../framework/task-structure.js';
+import { hasUiSignals } from '../framework/task-signals.js';
 import { getProjectEnhancedAnalysisPath, getProjectPostprocessContextPath, getProjectPreprocessContextPath } from '../skill/index.js';
 import type { EnhancedAnalysisFile, PostprocessContextFile, PreprocessContextFile } from '../skill/project-runtime.js';
 
@@ -174,6 +177,7 @@ async function validateOpenSpecToTrellis(
     issues,
     'missing_repository_state_guide',
   );
+  await validateBootstrapState(projectPath, issues);
 
   const groundedSpecCount = await countGroundedSpecs(path.join(projectPath, '.trellis', 'spec'));
   if (groundedSpecCount <= 0) {
@@ -206,7 +210,7 @@ async function validateOpenSpecToTrellis(
 
   const taskDirectories = await collectTaskDirectories(path.join(projectPath, '.trellis', 'tasks'));
   for (const task of taskDirectories) {
-    await validateTaskDirectory(task, issues);
+    await validateTaskDirectory(task, projectPath, issues);
   }
 
   return {
@@ -215,12 +219,18 @@ async function validateOpenSpecToTrellis(
   };
 }
 
-async function validateTaskDirectory(task: TrellisTaskDirectory, issues: ValidationIssue[]): Promise<void> {
+async function validateTaskDirectory(
+  task: TrellisTaskDirectory,
+  projectPath: string,
+  issues: ValidationIssue[],
+): Promise<void> {
   const taskJsonPath = path.join(task.dirPath, 'task.json');
   const taskJson = await readOptionalJson<Record<string, unknown>>(taskJsonPath, issues, 'missing_task_json');
+  const prdPath = path.join(task.dirPath, 'prd.md');
+  const implementPath = path.join(task.dirPath, 'implement.jsonl');
 
-  await ensureFileExists(path.join(task.dirPath, 'prd.md'), issues, 'missing_prd');
-  await ensureFileExists(path.join(task.dirPath, 'implement.jsonl'), issues, 'missing_implement_context');
+  await ensureFileExists(prdPath, issues, 'missing_prd');
+  await ensureFileExists(implementPath, issues, 'missing_implement_context');
   await ensureFileExists(path.join(task.dirPath, 'check.jsonl'), issues, 'missing_check_context');
   await ensureFileExists(path.join(task.dirPath, 'debug.jsonl'), issues, 'missing_debug_context');
 
@@ -306,6 +316,15 @@ async function validateTaskDirectory(task: TrellisTaskDirectory, issues: Validat
       path: taskJsonPath,
     });
   }
+
+  validateTaskTimeline(taskJson, meta, taskJsonPath, issues);
+
+  const prdContent = await readOptionalText(prdPath);
+  const implementEntries = await readJsonlEntries(implementPath);
+  validateTaskContext(task, taskJson, meta, prdContent, implementEntries, taskJsonPath, issues);
+  await validatePreservedSourceArtifacts(task, meta, taskJsonPath, issues);
+  await validateStructuredTaskMetadata(task, meta, taskJsonPath, issues);
+  await validateSourceTimestampTrust(task, meta, issues);
 }
 
 async function readOptionalJson<T>(
@@ -337,6 +356,322 @@ async function ensureFileExists(filePath: string, issues: ValidationIssue[], cod
       message: `Missing required file: ${filePath}`,
       path: filePath,
     });
+  }
+}
+
+async function validateBootstrapState(projectPath: string, issues: ValidationIssue[]): Promise<void> {
+  const scriptsPath = path.join(projectPath, '.trellis', 'scripts');
+  const guidePath = path.join(projectPath, '.trellis', 'spec', 'guides', 'repository-and-conversion-state.md');
+  const hasScripts = await pathExists(scriptsPath);
+  const guideContent = await readOptionalText(guidePath);
+
+  if (!hasScripts) {
+    issues.push({
+      severity: 'info',
+      code: 'trellis_bootstrap_follow_up',
+      message: 'Only the minimum Trellis runtime skeleton is present. Run `trellis update` and then `trellis init` if you need the full Trellis workflow/tooling bundle.',
+      path: scriptsPath,
+    });
+  }
+
+  if (hasScripts && guideContent && /there is no\s+`?\.trellis\/scripts\/`?\s+directory/i.test(guideContent)) {
+    issues.push({
+      severity: 'warning',
+      code: 'stale_repository_state_guide',
+      message: 'repository-and-conversion-state.md still claims `.trellis/scripts/` is missing even though it exists now. Re-run `transpec postprocess`.',
+      path: guidePath,
+    });
+  }
+}
+
+function validateTaskTimeline(
+  taskJson: Record<string, unknown>,
+  meta: Record<string, unknown>,
+  taskJsonPath: string,
+  issues: ValidationIssue[],
+): void {
+  const createdAt = typeof taskJson.createdAt === 'string' ? taskJson.createdAt : null;
+  const completedAt = typeof taskJson.completedAt === 'string' ? taskJson.completedAt : null;
+  if (createdAt && completedAt && createdAt > completedAt) {
+    issues.push({
+      severity: 'error',
+      code: 'impossible_task_timeline',
+      message: `Task ${taskJsonPath} has createdAt later than completedAt.`,
+      path: taskJsonPath,
+    });
+  }
+
+  const sourceCreatedAt = typeof meta.sourceCreatedAt === 'string' ? meta.sourceCreatedAt : null;
+  const sourceArchivedAt = typeof meta.sourceArchivedAt === 'string' ? meta.sourceArchivedAt : null;
+  if (sourceCreatedAt && sourceArchivedAt && sourceCreatedAt > sourceArchivedAt) {
+    issues.push({
+      severity: 'error',
+      code: 'impossible_source_timeline',
+      message: `Task ${taskJsonPath} preserves a source timeline where sourceCreatedAt is later than sourceArchivedAt.`,
+      path: taskJsonPath,
+    });
+  }
+}
+
+function validateTaskContext(
+  task: TrellisTaskDirectory,
+  taskJson: Record<string, unknown>,
+  meta: Record<string, unknown>,
+  prdContent: string | null,
+  implementEntries: Array<{ file?: string; reason?: string }>,
+  taskJsonPath: string,
+  issues: ValidationIssue[],
+): void {
+  const needsFrontendContext = hasUiSignals(
+    taskJson.title,
+    taskJson.description,
+    prdContent,
+    meta.sourcePath,
+    meta.preservedSourceFiles,
+  );
+  if (!needsFrontendContext) {
+    return;
+  }
+
+  if (taskJson.dev_type === 'backend' || taskJson.dev_type == null) {
+    issues.push({
+      severity: 'warning',
+      code: 'ui_task_dev_type_degraded',
+      message: `Task ${task.dirPath} looks like a UI/TUI/setup workflow but dev_type is ${String(taskJson.dev_type)}.`,
+      path: taskJsonPath,
+    });
+  }
+
+  const hasFrontendContext = implementEntries.some(entry => typeof entry.file === 'string' && entry.file.startsWith('.trellis/spec/frontend/'));
+  if (!hasFrontendContext) {
+    issues.push({
+      severity: 'warning',
+      code: 'ui_task_missing_frontend_context',
+      message: `Task ${task.dirPath} looks like a UI/TUI/setup workflow but implement.jsonl does not include any frontend Trellis context.`,
+      path: path.join(task.dirPath, 'implement.jsonl'),
+    });
+  }
+}
+
+async function validatePreservedSourceArtifacts(
+  task: TrellisTaskDirectory,
+  meta: Record<string, unknown>,
+  taskJsonPath: string,
+  issues: ValidationIssue[],
+): Promise<void> {
+  const preservedFiles = getRecord(meta.preservedSourceFiles);
+  const sourcePath = typeof meta.sourcePath === 'string' ? meta.sourcePath : null;
+  const sourceDir = sourcePath ? path.dirname(sourcePath) : null;
+  const sourceTasksPath = sourceDir ? path.join(sourceDir, 'tasks.md') : null;
+  const sourceManifestPath = sourceDir ? path.join(sourceDir, '.openspec.yaml') : null;
+  const sourceDesignPath = sourceDir ? path.join(sourceDir, 'design.md') : null;
+
+  if (sourceTasksPath && await pathExists(sourceTasksPath)) {
+    const preservedTaskFile = typeof preservedFiles?.tasksMd === 'string'
+      ? path.join(task.dirPath, preservedFiles.tasksMd)
+      : path.join(task.dirPath, 'source-tasks.md');
+    if (!await pathExists(preservedTaskFile)) {
+      issues.push({
+        severity: 'error',
+        code: 'missing_preserved_tasks_artifact',
+        message: `Task ${task.dirPath} lost source tasks.md content during conversion; expected preserved artifact.`,
+        path: taskJsonPath,
+      });
+    }
+  }
+
+  if (sourceManifestPath && await pathExists(sourceManifestPath)) {
+    const preservedManifestFile = typeof preservedFiles?.manifestYaml === 'string'
+      ? path.join(task.dirPath, preservedFiles.manifestYaml)
+      : path.join(task.dirPath, 'source-manifest.yaml');
+    if (!await pathExists(preservedManifestFile)) {
+      issues.push({
+        severity: 'warning',
+        code: 'missing_preserved_manifest_artifact',
+        message: `Task ${task.dirPath} did not preserve the raw OpenSpec manifest as a target artifact.`,
+        path: taskJsonPath,
+      });
+    }
+  }
+
+  if (sourceDesignPath && await pathExists(sourceDesignPath) && !await pathExists(path.join(task.dirPath, 'design.md'))) {
+    issues.push({
+      severity: 'error',
+      code: 'missing_preserved_design_artifact',
+      message: `Task ${task.dirPath} is missing design.md even though the source OpenSpec change had one.`,
+      path: taskJsonPath,
+    });
+  }
+}
+
+async function validateStructuredTaskMetadata(
+  task: TrellisTaskDirectory,
+  meta: Record<string, unknown>,
+  taskJsonPath: string,
+  issues: ValidationIssue[],
+): Promise<void> {
+  const sourcePath = typeof meta.sourcePath === 'string' ? meta.sourcePath : null;
+  if (!sourcePath) {
+    return;
+  }
+
+  const sourceTasksPath = path.join(path.dirname(sourcePath), 'tasks.md');
+  if (!await pathExists(sourceTasksPath)) {
+    return;
+  }
+
+  const tasksContent = await readOptionalText(sourceTasksPath);
+  if (!tasksContent) {
+    return;
+  }
+
+  const parsedTasks = parseTaskStructure(tasksContent);
+  if (!hasStructuredTaskContent(parsedTasks)) {
+    return;
+  }
+
+  const missingPieces: string[] = [];
+  if (parsedTasks.summary && typeof meta.sourceTaskSummary !== 'string') {
+    missingPieces.push('summary');
+  }
+  if (parsedTasks.acceptanceCriteria.length > 0 && !hasNonEmptyStringArray(meta.sourceAcceptanceCriteria)) {
+    missingPieces.push('acceptance criteria');
+  }
+  if (parsedTasks.followUpSuggestions.length > 0 && !hasNonEmptyStringArray(meta.sourceFollowUpSuggestions)) {
+    missingPieces.push('follow-up suggestions');
+  }
+  if (parsedTasks.estimates.length > 0 && !hasStructuredEstimateArray(meta.sourceTaskEstimates)) {
+    missingPieces.push('estimates');
+  }
+  if (parsedTasks.sections.length > 0 && !hasStructuredSectionArray(meta.sourceTaskSections)) {
+    missingPieces.push('structured sections');
+  }
+
+  if (missingPieces.length === 0) {
+    return;
+  }
+
+  issues.push({
+    severity: 'warning',
+    code: 'missing_structured_tasks_metadata',
+    message: `Task ${task.dirPath} did not preserve structured tasks.md metadata for: ${missingPieces.join(', ')}.`,
+    path: taskJsonPath,
+  });
+}
+
+async function validateSourceTimestampTrust(
+  task: TrellisTaskDirectory,
+  meta: Record<string, unknown>,
+  issues: ValidationIssue[],
+): Promise<void> {
+  const sourcePath = typeof meta.sourcePath === 'string' ? meta.sourcePath : null;
+  if (!sourcePath) {
+    return;
+  }
+
+  const manifestPath = path.join(path.dirname(sourcePath), '.openspec.yaml');
+  if (!await pathExists(manifestPath)) {
+    return;
+  }
+
+  const manifestContent = await readOptionalText(manifestPath);
+  if (!manifestContent) {
+    return;
+  }
+
+  const manifest = parseYaml(manifestContent);
+  if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) {
+    return;
+  }
+
+  const record = manifest as Record<string, unknown>;
+  const sourceCreatedAt = typeof meta.sourceCreatedAt === 'string' ? meta.sourceCreatedAt : null;
+  const sourceUpdatedAt = typeof meta.sourceUpdatedAt === 'string' ? meta.sourceUpdatedAt : null;
+  const sourceArchivedAt = typeof meta.sourceArchivedAt === 'string' ? meta.sourceArchivedAt : null;
+  const hasManifestUpdatedAt = typeof record.updatedAt === 'string' && record.updatedAt.trim().length > 0;
+  const hasManifestArchivedAt = typeof record.archivedAt === 'string' && record.archivedAt.trim().length > 0;
+  const hasManifestCompletedAt = typeof record.completedAt === 'string' && record.completedAt.trim().length > 0;
+
+  if (!hasManifestUpdatedAt && sourceCreatedAt && sourceUpdatedAt && sourceUpdatedAt !== sourceCreatedAt) {
+    issues.push({
+      severity: 'warning',
+      code: 'untrusted_source_updated_at',
+      message: `Task ${task.dirPath} has sourceUpdatedAt=${sourceUpdatedAt} but the source manifest has no updatedAt field. This timestamp is likely converter-derived rather than source-native.`,
+      path: path.join(task.dirPath, 'task.json'),
+    });
+  }
+
+  if (!hasManifestArchivedAt && !hasManifestCompletedAt && sourceArchivedAt) {
+    issues.push({
+      severity: 'warning',
+      code: 'untrusted_source_archived_at',
+      message: `Task ${task.dirPath} has sourceArchivedAt=${sourceArchivedAt} but the source manifest has no archived/completed timestamp. This timestamp is likely not source-native.`,
+      path: path.join(task.dirPath, 'task.json'),
+    });
+  }
+}
+
+function getRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function hasNonEmptyStringArray(value: unknown): boolean {
+  return Array.isArray(value) && value.some(item => typeof item === 'string' && item.trim().length > 0);
+}
+
+function hasStructuredEstimateArray(value: unknown): boolean {
+  return Array.isArray(value)
+    && value.some(item => {
+      const record = getRecord(item);
+      return Boolean(record && typeof record.value === 'string' && record.value.trim().length > 0);
+    });
+}
+
+function hasStructuredSectionArray(value: unknown): boolean {
+  return Array.isArray(value)
+    && value.some(item => {
+      const record = getRecord(item);
+      return Boolean(record && typeof record.title === 'string' && record.title.trim().length > 0);
+    });
+}
+
+async function readJsonlEntries(filePath: string): Promise<Array<{ file?: string; reason?: string }>> {
+  const content = await readOptionalText(filePath);
+  if (!content) {
+    return [];
+  }
+
+  const entries: Array<{ file?: string; reason?: string }> = [];
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      continue;
+    }
+    try {
+      entries.push(JSON.parse(trimmed) as { file?: string; reason?: string });
+    } catch {
+      // Ignore malformed lines; the file existence check already covers the hard failure path.
+    }
+  }
+  return entries;
+}
+
+async function readOptionalText(filePath: string): Promise<string | null> {
+  try {
+    return await fs.readFile(filePath, 'utf-8');
+  } catch {
+    return null;
+  }
+}
+
+async function pathExists(filePath: string): Promise<boolean> {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
   }
 }
 

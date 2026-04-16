@@ -571,6 +571,130 @@ Why this is correct:
 
 ---
 
+## Scenario: Structured OpenSpec Task Preservation
+
+### 1. Scope / Trigger
+- Trigger: `openspec/changes/*/tasks.md` or `openspec/changes/archive/*/tasks.md` contains more than checkbox subtasks, such as overview text, acceptance criteria, follow-up work, or effort estimates.
+- Trigger: OpenSpec parse output must preserve this structure in IR metadata, and Trellis emit must carry it into `task.json.meta` so converted tasks remain replayable without reopening the source tree.
+
+### 2. Signatures
+
+Compatibility-sensitive entry points:
+
+```typescript
+// packages/cli/src/core/framework/task-structure.ts
+export interface ParsedTaskStructure {
+  subtasks: Array<{ name: string; status: string }>;
+  summary: string | null;
+  acceptanceCriteria: string[];
+  followUpSuggestions: string[];
+  estimates: Array<{ scope: string | null; value: string }>;
+  sections: Array<{
+    title: string;
+    level: number;
+    kind: 'summary' | 'acceptance' | 'follow_up' | 'estimate' | 'checklist' | 'other';
+    content: string;
+    items: string[];
+  }>;
+}
+
+export function parseTaskStructure(content: string): ParsedTaskStructure;
+
+// packages/cli/src/core/framework/adapters/openspec.ts
+async parseTasksFile(filePath: string): Promise<ParsedTaskStructure>;
+
+// packages/cli/src/core/framework/adapters/trellis.ts
+private resolveTaskDescription(entity: CoreEntity): string;
+async emit(entity: CoreEntity, targetPath: string): Promise<void>;
+```
+
+### 3. Contracts
+
+OpenSpec parse contract:
+- `tasks.md` checkbox items still populate `metadata.subtasks`.
+- Section-level information must also populate:
+  - `metadata.sourceTaskSummary`
+  - `metadata.sourceAcceptanceCriteria`
+  - `metadata.sourceFollowUpSuggestions`
+  - `metadata.sourceTaskEstimates`
+  - `metadata.sourceTaskSections`
+- Numbered section wrappers such as `1. Runtime flow` may be emitted as derived subtasks when they contain structured child content; this is allowed and must be deterministic.
+- Estimates such as `估时：0.5 天` must be preserved as structured values instead of being flattened into prose-only task descriptions.
+
+Trellis emit contract:
+- If `metadata.sourceDescription` is missing, `resolveTaskDescription()` may fall back to `metadata.sourceTaskSummary`.
+- `task.json.meta` must preserve the source-side structure under:
+  - `sourceTaskSummary`
+  - `sourceAcceptanceCriteria`
+  - `sourceFollowUpSuggestions`
+  - `sourceTaskEstimates`
+  - `sourceTaskSections`
+- Missing source files may produce empty arrays/nulls, but when the source `tasks.md` exists and contains structured sections, emit must not silently drop them.
+
+### 4. Validation & Error Matrix
+
+| Boundary | Validation | Failure behavior |
+|----------|------------|------------------|
+| `tasks.md` parse | Checkbox subtasks and section structure are both extracted | Converted task loses non-checkbox planning semantics |
+| Parse → IR metadata | `sourceTask*` metadata fields are attached when structure exists | Later emit/validate cannot distinguish "empty source" from "dropped metadata" |
+| IR → Trellis emit | `task.json.meta.sourceTask*` fields survive conversion | Trellis task cannot be replayed with acceptance/follow-up context |
+| Description fallback | `sourceTaskSummary` may drive description only when manifest description is absent | Target description regresses to vague first-paragraph extraction |
+
+### 5. Good/Base/Bad Cases
+
+#### Good
+- Source `tasks.md` contains `## 概览`, `## 验收准则`, and `## 后续可选任务`; OpenSpec metadata carries all three and Trellis `task.json.meta` exposes them as structured arrays/objects.
+- Source `tasks.md` includes `估时：0.5 天`; Trellis output preserves `{ scope: '1. Setup navigation', value: '0.5 天' }`.
+
+#### Base
+- Source `tasks.md` contains only checkbox items; `subtasks` are preserved and the structured arrays may stay empty.
+- Source `tasks.md` contains freeform summary prose before any checklist; parser preserves it as `summary`.
+
+#### Bad
+- Converter preserves `source-tasks.md` as a raw file but drops `summary`, `acceptanceCriteria`, and `followUpSuggestions`; consumers still need to re-parse markdown manually.
+- Estimates are folded into a flattened description string; downstream audit cannot distinguish time data from arbitrary prose.
+
+### 6. Tests Required
+
+Required regression coverage:
+- `packages/cli/src/core/framework/adapters/openspec.test.ts`
+  - Assert structured `tasks.md` sections produce summary, acceptance criteria, follow-up suggestions, estimates, and sections.
+- `packages/cli/src/cli/commands/runtime-compat.test.ts`
+  - Assert OpenSpec -> Trellis output writes `sourceTask*` fields into `task.json.meta`.
+- `packages/cli/src/core/validation/conversion.test.ts`
+  - Assert removing `sourceTask*` fields from `task.json.meta` produces `missing_structured_tasks_metadata`.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+entity.metadata.tasksContent = tasksContent;
+entity.metadata.subtasks = parseCheckboxes(tasksContent);
+```
+
+Why this is wrong:
+- Raw markdown is preserved, but structured semantics are still lost.
+- Trellis emit cannot distinguish acceptance criteria from arbitrary prose.
+
+#### Correct
+
+```typescript
+const parsedTasks = parseTaskStructure(tasksContent);
+entity.metadata.subtasks = parsedTasks.subtasks;
+entity.metadata.sourceTaskSummary = parsedTasks.summary;
+entity.metadata.sourceAcceptanceCriteria = parsedTasks.acceptanceCriteria;
+entity.metadata.sourceFollowUpSuggestions = parsedTasks.followUpSuggestions;
+entity.metadata.sourceTaskEstimates = parsedTasks.estimates;
+entity.metadata.sourceTaskSections = parsedTasks.sections;
+```
+
+Why this is correct:
+- Non-checkbox task semantics are preserved once at parse time.
+- Target adapters and validators can reuse structured fields without re-parsing source markdown.
+
+---
+
 ## Common Mistakes
 
 ### 1. Modifying content during parsing

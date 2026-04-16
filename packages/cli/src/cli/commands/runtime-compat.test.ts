@@ -69,6 +69,8 @@ describe('runtime compatibility flows', () => {
       const taskSlug = variant === 'legacy' ? 'legacy-style' : 'compact-style';
       const taskDir = path.join(projectPath, '.trellis', 'tasks', `04-15-${taskSlug}`);
       await expect(fs.access(path.join(taskDir, 'prd.md'))).resolves.toBeUndefined();
+      await expect(fs.access(path.join(taskDir, 'source-tasks.md'))).resolves.toBeUndefined();
+      await expect(fs.access(path.join(taskDir, 'source-manifest.yaml'))).resolves.toBeUndefined();
       await expect(fs.access(path.join(taskDir, 'implement.jsonl'))).resolves.toBeUndefined();
       await expect(fs.access(path.join(taskDir, 'check.jsonl'))).resolves.toBeUndefined();
       await expect(fs.access(path.join(taskDir, 'debug.jsonl'))).resolves.toBeUndefined();
@@ -100,6 +102,11 @@ describe('runtime compatibility flows', () => {
         originalExtendedType: 'change',
         sourceStatus: 'draft',
         isArchived: false,
+        sourceUpdatedAt: taskJson.meta.sourceCreatedAt,
+        preservedSourceFiles: {
+          tasksMd: 'source-tasks.md',
+          manifestYaml: 'source-manifest.yaml',
+        },
       });
 
       const preprocessAfterApply = JSON.parse(
@@ -320,6 +327,8 @@ describe('runtime compatibility flows', () => {
     );
     await expect(fs.access(path.join(archivedTaskDir, 'prd.md'))).resolves.toBeUndefined();
     await expect(fs.access(path.join(archivedTaskDir, 'task.json'))).resolves.toBeUndefined();
+    await expect(fs.access(path.join(archivedTaskDir, 'source-tasks.md'))).resolves.toBeUndefined();
+    await expect(fs.access(path.join(archivedTaskDir, 'source-manifest.yaml'))).resolves.toBeUndefined();
     await expect(
       fs.access(path.join(projectPath, '.trellis', 'tasks', '04-15-compact-style', 'prd.md')),
     ).rejects.toThrow();
@@ -329,7 +338,82 @@ describe('runtime compatibility flows', () => {
       isArchived: true,
       originalExtendedType: 'change',
       sourceStatus: 'draft',
+      sourceArchivedAt: null,
     });
+    expect(archivedTask.completedAt).toBeNull();
+  });
+
+  it('should infer fullstack context for UI-heavy OpenSpec changes', async () => {
+    const projectPath = await createTempDir('transpec-openspec-ui-flow-', tempDirs);
+    await createOpenSpecProject(projectPath, 'current', 'archive', 'terminal-ui');
+    await setupTranspecConfig(projectPath, 'openspec', 'trellis');
+
+    await preprocessCommand({ projectPath });
+    await seedEnhancedAnalysis(projectPath);
+    await applyCommand({ projectPath });
+
+    const archivedTaskDir = path.join(
+      projectPath,
+      '.trellis',
+      'tasks',
+      'archive',
+      '2026-04',
+      '04-15-interaction-setup-navigation',
+    );
+    const taskJson = JSON.parse(await fs.readFile(path.join(archivedTaskDir, 'task.json'), 'utf-8'));
+    const implementContext = await fs.readFile(path.join(archivedTaskDir, 'implement.jsonl'), 'utf-8');
+
+    expect(taskJson.dev_type).toBe('fullstack');
+    expect(taskJson.meta).toMatchObject({
+      sourceTaskSummary: '重构交互式 setup 为单栏、逐级进入的 terminal UI，并补充 contextual help。',
+      sourceAcceptanceCriteria: [
+        'setup 菜单支持进入、返回与快捷键提示',
+      ],
+      sourceFollowUpSuggestions: [
+        'add locale-specific help copy',
+      ],
+      sourceTaskEstimates: [
+        { scope: '1. Setup navigation', value: '0.5 天' },
+      ],
+    });
+    expect(taskJson.meta.sourceTaskSections.map((section: { title: string }) => section.title)).toEqual([
+      '概览',
+      '任务清单',
+      '验收准则',
+      '后续可选任务',
+    ]);
+    expect(implementContext).toContain('.trellis/spec/backend/index.md');
+    expect(implementContext).toContain('.trellis/spec/frontend/index.md');
+    expect(implementContext).toContain('.trellis/spec/guides/cross-layer-thinking-guide.md');
+  });
+
+  it('should keep interactive CLI changes on backend-only context', async () => {
+    const projectPath = await createTempDir('transpec-openspec-interactive-cli-flow-', tempDirs);
+    await createOpenSpecProject(projectPath, 'current', 'archive', 'interactive-cli');
+    await setupTranspecConfig(projectPath, 'openspec', 'trellis');
+
+    await preprocessCommand({ projectPath });
+    await seedEnhancedAnalysis(projectPath);
+    await applyCommand({ projectPath });
+
+    const archivedTaskDir = path.join(
+      projectPath,
+      '.trellis',
+      'tasks',
+      'archive',
+      '2026-04',
+      '04-15-guided-cli-install',
+    );
+    const taskJson = JSON.parse(await fs.readFile(path.join(archivedTaskDir, 'task.json'), 'utf-8'));
+    const implementContext = await fs.readFile(path.join(archivedTaskDir, 'implement.jsonl'), 'utf-8');
+    const frontendSpecFiles = (await fs.readdir(path.join(projectPath, '.trellis', 'spec', 'frontend')))
+      .filter(file => file !== 'index.md');
+
+    expect(taskJson.dev_type).toBe('backend');
+    expect(implementContext).toContain('.trellis/spec/backend/index.md');
+    expect(implementContext).not.toContain('.trellis/spec/frontend/index.md');
+    expect(implementContext).not.toContain('.trellis/spec/guides/cross-layer-thinking-guide.md');
+    expect(frontendSpecFiles).toHaveLength(0);
   });
 
   it.each(['legacy', 'current'] as const)(

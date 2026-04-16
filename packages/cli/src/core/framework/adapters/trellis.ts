@@ -29,6 +29,7 @@ import * as path from 'path';
 import { BaseFrameworkAdapter, FrameworkDetails } from '../base-adapter.js';
 import { CoreEntity, CoreType, FrameworkType } from '../../ir/types.js';
 import { getLogger, LogModules } from '../../logging/index.js';
+import { buildEntitySignalHaystack, hasUiSignals } from '../task-signals.js';
 
 const logger = getLogger(LogModules.ADAPTER);
 const DEFAULT_TASK_NEXT_ACTIONS = [
@@ -184,6 +185,9 @@ export class TrellisAdapter extends BaseFrameworkAdapter {
 
     const metadata = this.parseMetadata(content, extendedType, filePath);
 
+    const createdAt = (metadata.createdAt as string) || now;
+    const updatedAt = (metadata.updatedAt as string) || createdAt;
+
     return {
       id: this.buildEntityId(filePath, extendedType),
       name,
@@ -193,8 +197,8 @@ export class TrellisAdapter extends BaseFrameworkAdapter {
       metadata,
       sourceFramework: 'trellis',
       sourcePath: filePath,
-      createdAt: (metadata.createdAt as string) || now,
-      updatedAt: now
+      createdAt,
+      updatedAt,
     };
   }
 
@@ -284,10 +288,27 @@ export class TrellisAdapter extends BaseFrameworkAdapter {
       const sourceStatus = typeof entity.metadata.sourceStatus === 'string'
         ? entity.metadata.sourceStatus
         : undefined;
-      const devType = await this.detectProjectDevType(targetPath);
+      const taskContext = await this.resolveTaskContext(targetPath, entity);
+      const devType = taskContext.devType;
       const baseBranch = await this.detectBaseBranch(targetPath);
       const status = this.determineStatus(sourceStatus, subtasks, Boolean(entity.metadata.isArchived));
       const importedAt = new Date().toISOString();
+      const preservedSourceFiles = this.buildPreservedSourceFiles(entity);
+      const sourceTaskSummary = typeof entity.metadata.sourceTaskSummary === 'string'
+        ? entity.metadata.sourceTaskSummary
+        : null;
+      const sourceAcceptanceCriteria = Array.isArray(entity.metadata.sourceAcceptanceCriteria)
+        ? entity.metadata.sourceAcceptanceCriteria
+        : [];
+      const sourceFollowUpSuggestions = Array.isArray(entity.metadata.sourceFollowUpSuggestions)
+        ? entity.metadata.sourceFollowUpSuggestions
+        : [];
+      const sourceTaskEstimates = Array.isArray(entity.metadata.sourceTaskEstimates)
+        ? entity.metadata.sourceTaskEstimates
+        : [];
+      const sourceTaskSections = Array.isArray(entity.metadata.sourceTaskSections)
+        ? entity.metadata.sourceTaskSections
+        : [];
 
       const taskJson = {
         id: taskSlug,
@@ -302,7 +323,7 @@ export class TrellisAdapter extends BaseFrameworkAdapter {
         creator: 'transpec',
         assignee: this.resolveAssignee(entity),
         createdAt: sourceCreatedAt,
-        completedAt: status === 'completed' ? this.resolveCompletedAt(entity, sourceCreatedAt) : null,
+        completedAt: status === 'completed' ? this.resolveCompletedAt(entity) : null,
         branch: null,
         base_branch: baseBranch,
         worktree_path: null,
@@ -325,23 +346,30 @@ export class TrellisAdapter extends BaseFrameworkAdapter {
           sourceFramework: entity.sourceFramework,
           sourcePath: entity.sourcePath,
           sourceCreatedAt,
-          sourceUpdatedAt: entity.updatedAt,
-          sourceArchivedAt: entity.metadata.archivedAt || null,
+          sourceUpdatedAt: this.resolveSourceUpdatedAt(entity),
+          sourceArchivedAt: this.resolveSourceArchivedAt(entity),
           sourceStatus: sourceStatus || null,
           importedAt,
           isArchived: Boolean(entity.metadata.isArchived),
+          preservedSourceFiles,
+          sourceTaskSummary,
+          sourceAcceptanceCriteria,
+          sourceFollowUpSuggestions,
+          sourceTaskEstimates,
+          sourceTaskSections,
         },
       };
 
       await fs.writeFile(path.join(baseDir, 'task.json'), JSON.stringify(taskJson, null, 2));
       logger.debug('Emitted task.json', { path: baseDir, subtasks: subtasks?.length || 0 });
-      await this.writeTaskContextFiles(baseDir, devType);
+      await this.writeTaskContextFiles(baseDir, taskContext.implementEntries);
 
       // Optionally emit design.md if available
       if (entity.metadata.designContent) {
         await fs.writeFile(path.join(baseDir, 'design.md'), entity.metadata.designContent as string);
         logger.debug('Emitted design.md', { path: baseDir });
       }
+      await this.writePreservedSourceArtifacts(baseDir, entity);
     } else {
       // OpenSpec specs describe features (what the project does)
       // Trellis spec/ describes development guidelines (how to develop)
@@ -651,6 +679,9 @@ export class TrellisAdapter extends BaseFrameworkAdapter {
     if (typeof entity.metadata.sourceDescription === 'string' && entity.metadata.sourceDescription.trim()) {
       return entity.metadata.sourceDescription.trim();
     }
+    if (typeof entity.metadata.sourceTaskSummary === 'string' && entity.metadata.sourceTaskSummary.trim()) {
+      return entity.metadata.sourceTaskSummary.trim();
+    }
     return this.extractDescription(entity.content);
   }
 
@@ -679,16 +710,28 @@ export class TrellisAdapter extends BaseFrameworkAdapter {
     return entity.createdAt;
   }
 
-  private resolveCompletedAt(entity: CoreEntity, fallback: string): string {
+  private resolveSourceUpdatedAt(entity: CoreEntity): string | null {
+    if (typeof entity.metadata.updatedAt === 'string' && entity.metadata.updatedAt) {
+      return entity.metadata.updatedAt;
+    }
+    return entity.updatedAt || null;
+  }
+
+  private resolveSourceArchivedAt(entity: CoreEntity): string | null {
     if (typeof entity.metadata.archivedAt === 'string' && entity.metadata.archivedAt) {
       return entity.metadata.archivedAt;
     }
-    return fallback;
+    return null;
+  }
+
+  private resolveCompletedAt(entity: CoreEntity): string | null {
+    return this.resolveSourceArchivedAt(entity);
   }
 
   private resolveArchiveMonth(entity: CoreEntity, sourceCreatedAt: string): string {
-    if (typeof entity.metadata.archivedAt === 'string' && entity.metadata.archivedAt.length >= 7) {
-      return entity.metadata.archivedAt.slice(0, 7);
+    const sourceArchivedAt = this.resolveSourceArchivedAt(entity);
+    if (sourceArchivedAt && sourceArchivedAt.length >= 7) {
+      return sourceArchivedAt.slice(0, 7);
     }
     if (sourceCreatedAt.length >= 7) {
       return sourceCreatedAt.slice(0, 7);
@@ -711,8 +754,29 @@ export class TrellisAdapter extends BaseFrameworkAdapter {
 
   private async writeTaskContextFiles(
     taskDir: string,
-    devType: 'backend' | 'frontend' | 'fullstack',
+    implementEntries: Array<{ file: string; reason: string }>,
   ): Promise<void> {
+    await this.writeJsonl(path.join(taskDir, 'implement.jsonl'), implementEntries);
+    await this.writeJsonl(path.join(taskDir, 'check.jsonl'), DEFAULT_CHECK_CONTEXT);
+    await this.writeJsonl(path.join(taskDir, 'debug.jsonl'), DEFAULT_DEBUG_CONTEXT);
+  }
+
+  private async resolveTaskContext(
+    targetPath: string,
+    entity: CoreEntity,
+  ): Promise<{
+    devType: 'backend' | 'frontend' | 'fullstack';
+    implementEntries: Array<{ file: string; reason: string }>;
+  }> {
+    const repoDevType = await this.detectProjectDevType(targetPath);
+    const signalHaystack = buildEntitySignalHaystack(entity);
+    const needsFrontendContext = hasUiSignals(signalHaystack);
+    const devType = needsFrontendContext
+      ? repoDevType === 'frontend'
+        ? 'frontend'
+        : 'fullstack'
+      : repoDevType;
+
     const implementEntries = [{ file: '.trellis/workflow.md', reason: 'Project workflow and conventions' }];
     if (devType !== 'frontend') {
       implementEntries.push({
@@ -723,13 +787,42 @@ export class TrellisAdapter extends BaseFrameworkAdapter {
     if (devType !== 'backend') {
       implementEntries.push({
         file: '.trellis/spec/frontend/index.md',
-        reason: 'Frontend development guide',
+        reason: 'Frontend or interaction-surface guide',
+      });
+    }
+    if (devType === 'fullstack') {
+      implementEntries.push({
+        file: '.trellis/spec/guides/cross-layer-thinking-guide.md',
+        reason: 'Task spans runtime and interaction-layer behavior',
       });
     }
 
-    await this.writeJsonl(path.join(taskDir, 'implement.jsonl'), implementEntries);
-    await this.writeJsonl(path.join(taskDir, 'check.jsonl'), DEFAULT_CHECK_CONTEXT);
-    await this.writeJsonl(path.join(taskDir, 'debug.jsonl'), DEFAULT_DEBUG_CONTEXT);
+    return { devType, implementEntries };
+  }
+
+  private buildPreservedSourceFiles(entity: CoreEntity): Record<string, string> {
+    const files: Record<string, string> = {};
+
+    if (typeof entity.metadata.tasksContent === 'string' && entity.metadata.tasksContent.trim()) {
+      files.tasksMd = 'source-tasks.md';
+    }
+    if (typeof entity.metadata.changeManifestContent === 'string' && entity.metadata.changeManifestContent.trim()) {
+      files.manifestYaml = 'source-manifest.yaml';
+    }
+    if (typeof entity.metadata.designContent === 'string' && entity.metadata.designContent.trim()) {
+      files.designMd = 'design.md';
+    }
+
+    return files;
+  }
+
+  private async writePreservedSourceArtifacts(taskDir: string, entity: CoreEntity): Promise<void> {
+    if (typeof entity.metadata.tasksContent === 'string' && entity.metadata.tasksContent.trim()) {
+      await fs.writeFile(path.join(taskDir, 'source-tasks.md'), entity.metadata.tasksContent);
+    }
+    if (typeof entity.metadata.changeManifestContent === 'string' && entity.metadata.changeManifestContent.trim()) {
+      await fs.writeFile(path.join(taskDir, 'source-manifest.yaml'), entity.metadata.changeManifestContent);
+    }
   }
 
   private async writeJsonl(filePath: string, entries: Array<{ file: string; reason: string }>): Promise<void> {

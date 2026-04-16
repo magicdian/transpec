@@ -11,6 +11,7 @@ import type {
   PostprocessContextFile,
   PreprocessContextFile,
 } from '../skill/project-runtime.js';
+import { hasCliSignals, hasUiSignals } from '../framework/task-signals.js';
 
 const SKIPPED_SCAN_DIRECTORIES = new Set([
   '.git',
@@ -23,8 +24,6 @@ const SKIPPED_SCAN_DIRECTORIES = new Set([
   'target',
   'tmp',
 ]);
-const UI_SIGNAL_PATTERN = /\b(ui|ux|view|screen|page|component|layout|menu|panel|dialog|form|terminal|tui|setup|i18n|locale|interactive)\b/i;
-const CLI_SIGNAL_PATTERN = /\b(cli|command|terminal|shell|push|setup)\b/i;
 
 export interface GeneratedSpecArtifact {
   layer: 'backend' | 'frontend' | 'guides';
@@ -141,7 +140,11 @@ async function writeBackendSpec(
 ): Promise<GeneratedSpecArtifact> {
   const specs = entities.filter(entity => entity.type === 'spec');
   const language = detectPrimaryLanguage(scan);
-  const repoLooksCli = specs.some(entity => matchesAny(entity, CLI_SIGNAL_PATTERN))
+  const repoLooksCli = specs.some(entity => hasCliSignals(
+    entity.name,
+    entity.sourcePath,
+    entity.analysis,
+  ))
     || scan.notableFiles.some(file => /cargo\.toml$|package\.json$|main\.(rs|ts|js|py)$/i.test(file));
   const fileName = determineBackendFileName(language, repoLooksCli);
   const filePath = path.join(backendDir, fileName);
@@ -196,14 +199,18 @@ async function writeFrontendSpec(
   entities: AnalysisEntity[],
   scan: RepositoryScanResult,
 ): Promise<GeneratedSpecArtifact | null> {
-  const uiEntities = entities.filter(entity => matchesAny(entity, UI_SIGNAL_PATTERN));
+  const uiEntities = entities.filter(entity => hasUiSignals(
+    entity.name,
+    entity.sourcePath,
+    entity.analysis,
+  ));
   const uiPaths = collectRankedPaths(
     uiEntities.flatMap(entity => entity.analysis?.dependencies ?? []),
     projectPath,
   );
 
-  const hasUiSignals = uiEntities.length > 0 || scan.notableFiles.some(file => UI_SIGNAL_PATTERN.test(file));
-  if (!hasUiSignals) {
+  const repositoryHasUiSignals = uiEntities.length > 0 || scan.notableFiles.some(file => hasUiSignals(file));
+  if (!repositoryHasUiSignals) {
     return null;
   }
 
@@ -255,6 +262,7 @@ async function writeGuideSpec(
   generatedFiles: GeneratedSpecArtifact[],
 ): Promise<GeneratedSpecArtifact> {
   const filePath = path.join(guidesDir, 'repository-and-conversion-state.md');
+  const hasTrellisScripts = await pathExists(path.join(projectPath, '.trellis', 'scripts'));
   const legacySpecCount = await countMarkdownFiles(path.join(projectPath, '.trellis', 'legacy', 'specs'));
   const { activeTaskCount, archivedTaskCount } = await countTaskDirectories(path.join(projectPath, '.trellis', 'tasks'));
   const taskContextCoverage = await countTaskContextCoverage(path.join(projectPath, '.trellis', 'tasks'));
@@ -293,6 +301,9 @@ ${renderBulletList(groundedArtifacts.length > 0 ? groundedArtifacts : ['No groun
 - Backend / frontend / guide indexes should exist before Trellis skills run.
 - Historical OpenSpec archive imports should remain in \`.trellis/tasks/archive/\`, not the active task pool.
 - \`.transpec/workspace/preprocess-context.json\` should be refreshed after enhanced analysis changes.
+- ${hasTrellisScripts
+    ? 'The full `.trellis/scripts/` bundle is present in the current repository state.'
+    : 'Transpec currently guarantees only the minimum Trellis runtime skeleton. If `.trellis/scripts/` is still missing after conversion, run `trellis update` and then `trellis init` to install the full Trellis workflow/tooling layer.'}
 
 ## Recommended Refresh Sequence
 
@@ -333,6 +344,15 @@ async function updateIndex(
 async function readJsonFile<T>(filePath: string): Promise<T> {
   const content = await fs.readFile(filePath, 'utf-8');
   return JSON.parse(content) as T;
+}
+
+async function pathExists(filePath: string): Promise<boolean> {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function scanRepository(projectPath: string): Promise<RepositoryScanResult> {
@@ -516,18 +536,6 @@ function collectTopRoots(scan: RepositoryScanResult): string[] {
 
 function uniqueLimit(values: string[], limit: number): string[] {
   return [...new Set(values.filter(Boolean).map(value => value.trim()))].slice(0, limit);
-}
-
-function matchesAny(entity: AnalysisEntity, pattern: RegExp): boolean {
-  const haystack = [
-    entity.name,
-    entity.sourcePath,
-    entity.analysis?.intent ?? '',
-    ...(entity.analysis?.keyPoints ?? []),
-    ...(entity.analysis?.dependencies ?? []),
-    ...(entity.analysis?.constraints ?? []),
-  ].join('\n');
-  return pattern.test(haystack);
 }
 
 function toIndexLabel(relativePath: string): string {
