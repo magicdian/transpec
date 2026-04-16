@@ -47,11 +47,21 @@ describe('postprocess command', () => {
     await postprocessCommand({ projectPath });
 
     await expect(fs.access(guidesDoc)).resolves.toBeUndefined();
+    await expect(
+      fs.access(path.join(projectPath, '.trellis', 'spec', 'guides', 'cross-layer-thinking-guide.md')),
+    ).resolves.toBeUndefined();
+    await expect(
+      fs.access(path.join(projectPath, '.trellis', 'spec', 'guides', 'code-reuse-thinking-guide.md')),
+    ).resolves.toBeUndefined();
     const regeneratedBackendFiles = (await fs.readdir(backendDir)).filter(file => file !== 'index.md');
     expect(regeneratedBackendFiles.length).toBeGreaterThan(0);
 
     const guideContent = await fs.readFile(guidesDoc, 'utf-8');
     expect(guideContent).toContain('trellis update');
     expect(guideContent).toContain('trellis init');
+
+    const guidesIndex = await fs.readFile(path.join(projectPath, '.trellis', 'spec', 'guides', 'index.md'), 'utf-8');
+    expect(guidesIndex).toContain('[Cross Layer Thinking Guide](./cross-layer-thinking-guide.md)');
+    expect(guidesIndex).not.toContain('Generated baseline Trellis guide index');
   });
 });

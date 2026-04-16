@@ -340,7 +340,10 @@ describe('runtime compatibility flows', () => {
       sourceStatus: 'draft',
       sourceArchivedAt: null,
     });
-    expect(archivedTask.completedAt).toBeNull();
+    expect(archivedTask.status).toBe('completed');
+    expect(archivedTask.completedAt).toBe(archivedTask.meta.sourceUpdatedAt ?? archivedTask.createdAt);
+    expect(archivedTask.current_phase).toBe(6);
+    expect(archivedTask.next_action).toEqual([]);
   });
 
   it('should infer fullstack context for UI-heavy OpenSpec changes', async () => {
@@ -382,6 +385,9 @@ describe('runtime compatibility flows', () => {
       '验收准则',
       '后续可选任务',
     ]);
+    await expect(
+      fs.access(path.join(projectPath, '.trellis', 'spec', 'guides', 'cross-layer-thinking-guide.md')),
+    ).resolves.toBeUndefined();
     expect(implementContext).toContain('.trellis/spec/backend/index.md');
     expect(implementContext).toContain('.trellis/spec/frontend/index.md');
     expect(implementContext).toContain('.trellis/spec/guides/cross-layer-thinking-guide.md');
@@ -414,6 +420,31 @@ describe('runtime compatibility flows', () => {
     expect(implementContext).not.toContain('.trellis/spec/frontend/index.md');
     expect(implementContext).not.toContain('.trellis/spec/guides/cross-layer-thinking-guide.md');
     expect(frontendSpecFiles).toHaveLength(0);
+  });
+
+  it('should rewrite generated Trellis guide indexes to reference only grounded guide files', async () => {
+    const projectPath = await createTempDir('transpec-openspec-guides-index-', tempDirs);
+    await createOpenSpecProject(projectPath, 'current', 'archive', 'terminal-ui');
+    await setupTranspecConfig(projectPath, 'openspec', 'trellis');
+
+    await preprocessCommand({ projectPath });
+    await seedEnhancedAnalysis(projectPath);
+    await applyCommand({ projectPath });
+
+    const guidesIndexPath = path.join(projectPath, '.trellis', 'spec', 'guides', 'index.md');
+    const guidesIndex = await fs.readFile(guidesIndexPath, 'utf-8');
+
+    expect(guidesIndex).toContain('[Cross Layer Thinking Guide](./cross-layer-thinking-guide.md)');
+    expect(guidesIndex).toContain('[Code Reuse Thinking Guide](./code-reuse-thinking-guide.md)');
+    expect(guidesIndex).toContain('[Repository And Conversion State](./repository-and-conversion-state.md)');
+    expect(guidesIndex).not.toContain('Generated baseline Trellis guide index');
+
+    await expect(
+      fs.access(path.join(projectPath, '.trellis', 'spec', 'guides', 'cross-layer-thinking-guide.md')),
+    ).resolves.toBeUndefined();
+    await expect(
+      fs.access(path.join(projectPath, '.trellis', 'spec', 'guides', 'code-reuse-thinking-guide.md')),
+    ).resolves.toBeUndefined();
   });
 
   it.each(['legacy', 'current'] as const)(

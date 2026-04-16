@@ -579,6 +579,8 @@ Minimum deterministic output for OpenSpec -> Trellis:
 .trellis/spec/backend/index.md
 .trellis/spec/frontend/index.md
 .trellis/spec/guides/index.md
+.trellis/spec/guides/cross-layer-thinking-guide.md
+.trellis/spec/guides/code-reuse-thinking-guide.md
 .trellis/spec/guides/repository-and-conversion-state.md
 .trellis/tasks/archive/<YYYY-MM>/<MM-DD-slug>/task.json
 .trellis/tasks/archive/<YYYY-MM>/<MM-DD-slug>/prd.md
@@ -591,6 +593,13 @@ Rules:
 - Deterministic emit/postprocess owns these files. Optional agent postprocess may refine them but must not be their only source.
 - Archived OpenSpec changes must land under `.trellis/tasks/archive/`, not the active task pool.
 - Grounded docs under `.trellis/spec/` are minimum runtime artifacts for Trellis workflow consumption, not purely decorative output.
+- Deterministic postprocess MUST rewrite baseline `workflow.md` and spec index files into grounded docs when those files still carry Transpec-managed baseline markers.
+- Generated spec indexes MUST reference only guide/spec files that actually exist after postprocess.
+- Archived Trellis tasks emitted from OpenSpec archive imports MUST normalize to a completed historical state:
+  - `status: "completed"`
+  - `completedAt`: source `archivedAt`, else source `updatedAt`, else source `createdAt`
+  - `current_phase`: final/default workflow length, not `0`
+  - `next_action`: empty array
 - When source `tasks.md` contains structured sections, emitted `task.json.meta` must also preserve:
   - `sourceTaskSummary`
   - `sourceAcceptanceCriteria`
@@ -625,9 +634,9 @@ Rules:
 | `apply` → enhanced analysis import | If file missing and no `--force`, stop before transform | Print user-facing warning and return |
 | `apply` → workspace sync | `preprocess-context.json` rewritten after merge | `validate` reports stale `hasEnhancedAnalysis` if skipped |
 | `apply` → transform/emit | `runTransformEmit()` returns success or issues | Print issues and continue only when engine reports non-fatal warnings |
-| `apply` → deterministic postprocess | target bootstrap files, task runtime files, and grounded docs exist | `validate` reports missing runtime artifacts |
+| `apply` → deterministic postprocess | target bootstrap files, task runtime files, grounded docs, and grounded guide indexes exist | `validate` reports missing runtime artifacts, `baseline_*` warnings, or `broken_doc_reference` |
 | `apply` → structured task metadata | source `tasks.md` sections survive into `task.json.meta.sourceTask*` fields | `validate` reports `missing_structured_tasks_metadata` |
-| `validate` → Trellis runtime | archive placement, task fields, and grounded specs are all present | Fail command with explicit issue codes |
+| `validate` → Trellis runtime | archive placement, task fields, grounded specs, and JSONL doc references are all present | Fail command with explicit issue codes such as `broken_task_context_reference` |
 
 ### 5. Good/Base/Bad Cases
 
@@ -658,6 +667,12 @@ Rules:
 - runtime correctness is delegated to an optional postprocess skill
 - Result:
   - target appears converted but Trellis start/init-context cannot consume it reliably when the skill is skipped
+- deterministic postprocess leaves baseline indexes in place or emits links to guides that were never written
+- Result:
+  - `validate` reports `baseline_workflow_unresolved`, `baseline_spec_index_unresolved`, or `broken_doc_reference`
+- archived imported tasks keep planning-era lifecycle defaults after being placed under `.trellis/tasks/archive/`
+- Result:
+  - `validate` reports `archived_task_not_completed`, `completed_task_missing_completed_at`, or `completed_task_has_next_actions`
 - `source-tasks.md` is copied as a raw file, but `task.json.meta` drops all structured task sections
 - Result:
   - converted task keeps the file for humans, but agents and validators lose access to acceptance criteria, estimates, and follow-up items
@@ -680,7 +695,9 @@ Required regression coverage:
 - Smoke flow:
   - Assert `init -> preprocess -> apply -> validate` succeeds in a temp project.
   - Assert `.transpec/ir/conversion.db`, preprocess context, enhanced analysis file, and postprocess context all exist at the expected points.
-  - Assert Trellis bootstrap files, grounded docs, archive placement, and task runtime jsonl files exist after apply.
+  - Assert Trellis bootstrap files, grounded docs, grounded guide indexes, archive placement, and task runtime jsonl files exist after apply.
+  - Assert generated guide indexes reference only files that exist on disk.
+  - Assert archived imported tasks end in normalized completed lifecycle state.
   - Assert structured `tasks.md` sections appear in emitted `task.json.meta.sourceTask*`.
 
 ### 7. Wrong vs Correct
@@ -703,7 +720,7 @@ Why this is wrong:
 ```text
 1. preprocess exports current entities/relations and reconciles old enhanced-analysis IDs before finalizing hasEnhancedAnalysis
 2. apply imports enhanced analysis, rewrites preprocess-context.json, then emits target files
-3. deterministic postprocess creates minimum target bootstrap and grounded docs
+3. deterministic postprocess rewrites managed baseline workflow/index files, creates grounded guide docs, and keeps every generated reference resolvable on disk
 4. target-specific agent postprocess only refines or expands what is already runnable
 ```
 

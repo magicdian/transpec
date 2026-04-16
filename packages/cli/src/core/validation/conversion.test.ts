@@ -182,4 +182,49 @@ describe('conversion validation', () => {
     const result = await validateConvertedProject(projectPath);
     expect(result.issues.some(issue => issue.code === 'stale_repository_state_guide')).toBe(true);
   });
+
+  it('should report broken generated markdown references from Trellis indexes and task context', async () => {
+    const projectPath = await createTempDir('transpec-validate-broken-doc-refs-', tempDirs);
+    await createOpenSpecProject(projectPath, 'current', 'archive', 'terminal-ui');
+    await setupTranspecConfig(projectPath, 'openspec', 'trellis');
+
+    await preprocessCommand({ projectPath });
+    await seedEnhancedAnalysis(projectPath);
+    await applyCommand({ projectPath });
+
+    await fs.rm(path.join(projectPath, '.trellis', 'spec', 'guides', 'cross-layer-thinking-guide.md'), { force: true });
+
+    const result = await validateConvertedProject(projectPath);
+    expect(result.issues.some(issue => issue.code === 'broken_doc_reference')).toBe(true);
+    expect(result.issues.some(issue => issue.code === 'broken_task_context_reference')).toBe(true);
+  });
+
+  it('should warn when archived converted tasks keep incomplete lifecycle metadata', async () => {
+    const projectPath = await createTempDir('transpec-validate-archived-lifecycle-', tempDirs);
+    await createOpenSpecProject(projectPath, 'current', 'archive');
+    await setupTranspecConfig(projectPath, 'openspec', 'trellis');
+
+    await preprocessCommand({ projectPath });
+    await seedEnhancedAnalysis(projectPath);
+    await applyCommand({ projectPath });
+
+    const taskJsonPath = path.join(
+      projectPath,
+      '.trellis',
+      'tasks',
+      'archive',
+      '2026-04',
+      '04-15-compact-style',
+      'task.json',
+    );
+    const taskJson = JSON.parse(await fs.readFile(taskJsonPath, 'utf-8')) as Record<string, unknown>;
+    taskJson.status = 'planning';
+    taskJson.completedAt = null;
+    taskJson.current_phase = 0;
+    taskJson.next_action = [{ phase: 1, action: 'brainstorm' }];
+    await fs.writeFile(taskJsonPath, JSON.stringify(taskJson, null, 2));
+
+    const result = await validateConvertedProject(projectPath);
+    expect(result.issues.some(issue => issue.code === 'archived_task_not_completed')).toBe(true);
+  });
 });

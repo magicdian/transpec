@@ -251,6 +251,11 @@ private async writeTaskContextFiles(
 - Archived source work MUST emit into `.trellis/tasks/archive/<YYYY-MM>/<MM-DD-slug>/`.
 - Active work MUST emit into `.trellis/tasks/<MM-DD-slug>/`.
 - Every emitted Trellis task MUST include `implement.jsonl`, `check.jsonl`, and `debug.jsonl`.
+- Archived OpenSpec imports emitted as Trellis tasks MUST normalize to completed historical records:
+  - `status` is `completed`
+  - `completedAt` is populated from source `archivedAt`, else `updatedAt`, else `createdAt`
+  - `current_phase` is not left at the default planning phase `0`
+  - `next_action` is an empty array
 - Emit helpers may preserve existing bootstrap files, but they MUST NOT skip required runtime files altogether.
 
 ### 4. Validation & Error Matrix
@@ -261,6 +266,7 @@ private async writeTaskContextFiles(
 | Target bootstrap file already exists | Preserve existing file, do not overwrite blindly | info |
 | Archived change emitted into active task root | Treat as incorrect adapter output | error |
 | Task emitted without context jsonl files | Treat as incorrect adapter output | error |
+| Archived task keeps planning lifecycle defaults | Treat as incorrect historical-state mapping | warning |
 | Adapter lacks stable seed for an entity | Use fallback ID only for non-persisted or non-contractual cases | warning |
 
 ### 5. Good/Base/Bad Cases
@@ -268,7 +274,7 @@ private async writeTaskContextFiles(
 #### Good
 
 - OpenSpec adapter derives change IDs from `.openspec.yaml.name` or stable archive path, so rerunning `preprocess` keeps the same entity IDs.
-- Trellis adapter emits archive imports into `.trellis/tasks/archive/2026-04/04-01-xgit-auto-remote-push/` and writes all three context jsonl files.
+- Trellis adapter emits archive imports into `.trellis/tasks/archive/2026-04/04-01-xgit-auto-remote-push/`, writes all three context jsonl files, and leaves the imported task in a completed historical state.
 
 #### Base
 
@@ -290,6 +296,7 @@ Required regression coverage:
 - `packages/cli/src/cli/commands/runtime-compat.test.ts`
   - Assert archived OpenSpec changes emit into Trellis archive paths.
   - Assert emitted Trellis tasks include `implement.jsonl`, `check.jsonl`, and `debug.jsonl`.
+  - Assert archived emitted tasks have completed lifecycle metadata (`status`, `completedAt`, `current_phase`, `next_action`) instead of planning defaults.
 - Framework-specific adapter tests
   - Assert task/spec identity comes from stable source references rather than parse time.
 

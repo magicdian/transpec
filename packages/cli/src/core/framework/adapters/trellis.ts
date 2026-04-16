@@ -292,6 +292,7 @@ export class TrellisAdapter extends BaseFrameworkAdapter {
       const devType = taskContext.devType;
       const baseBranch = await this.detectBaseBranch(targetPath);
       const status = this.determineStatus(sourceStatus, subtasks, Boolean(entity.metadata.isArchived));
+      const isCompleted = status === 'completed';
       const importedAt = new Date().toISOString();
       const preservedSourceFiles = this.buildPreservedSourceFiles(entity);
       const sourceTaskSummary = typeof entity.metadata.sourceTaskSummary === 'string'
@@ -323,12 +324,12 @@ export class TrellisAdapter extends BaseFrameworkAdapter {
         creator: 'transpec',
         assignee: this.resolveAssignee(entity),
         createdAt: sourceCreatedAt,
-        completedAt: status === 'completed' ? this.resolveCompletedAt(entity) : null,
+        completedAt: isCompleted ? this.resolveCompletedAt(entity) : null,
         branch: null,
         base_branch: baseBranch,
         worktree_path: null,
-        current_phase: 0,
-        next_action: DEFAULT_TASK_NEXT_ACTIONS,
+        current_phase: isCompleted ? DEFAULT_TASK_NEXT_ACTIONS.length : 0,
+        next_action: isCompleted ? [] : DEFAULT_TASK_NEXT_ACTIONS,
         commit: null,
         pr_url: null,
         subtasks: subtasks?.map((t, idx) => ({
@@ -602,6 +603,10 @@ export class TrellisAdapter extends BaseFrameworkAdapter {
     subtasks?: Array<{ name: string; status: string }>,
     isArchived: boolean = false,
   ): string {
+    if (isArchived) {
+      return 'completed';
+    }
+
     if (sourceStatus) {
       const normalized = sourceStatus.toLowerCase();
       if (['draft', 'planned', 'planning', 'proposal'].includes(normalized)) {
@@ -725,7 +730,9 @@ export class TrellisAdapter extends BaseFrameworkAdapter {
   }
 
   private resolveCompletedAt(entity: CoreEntity): string | null {
-    return this.resolveSourceArchivedAt(entity);
+    return this.resolveSourceArchivedAt(entity)
+      ?? this.resolveSourceUpdatedAt(entity)
+      ?? this.resolveSourceCreatedAt(entity);
   }
 
   private resolveArchiveMonth(entity: CoreEntity, sourceCreatedAt: string): string {
