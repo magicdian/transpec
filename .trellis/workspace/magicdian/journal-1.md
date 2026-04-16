@@ -701,3 +701,45 @@ Implemented deterministic OpenSpec/Trellis entity IDs, reconciled enhanced-analy
 ### Next Steps
 
 - None - task complete
+
+
+## Session 20: Improve openspec to trellis conversion fidelity
+
+**Date**: 2026-04-16
+**Task**: Improve openspec to trellis conversion fidelity
+**Branch**: `dev`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+| Area | Update |
+|------|--------|
+| Metadata fidelity | Preserved structured `tasks.md` sections from OpenSpec into IR metadata and emitted Trellis `task.json.meta` fields (`sourceTaskSummary`, acceptance criteria, follow-up suggestions, estimates, sections). |
+| Context inference | Tightened UI/TUI detection so setup-style terminal flows pull frontend/cross-layer Trellis context while interactive CLI flows stay backend-only. |
+| Source preservation | Ensured converted Trellis tasks preserve raw `source-tasks.md` and `source-manifest.yaml` artifacts for future inspection. |
+| Validation | Added audits for impossible task timelines, missing preserved source artifacts, stale repository guide state, untrusted source timestamps, UI context degradation, and missing structured task metadata. |
+| Postprocess guidance | Updated the repository state guidance to treat missing `.trellis/scripts/` as a normal minimal-bootstrap state and recommend `trellis update` plus `trellis init`. |
+| Verification | `npm --prefix packages/cli run build` passed, `npm --prefix packages/cli test -- --run` passed (42 tests). Re-validating `/Users/magicdian/Documents/personal_project/xgit` still reports historical conversion-output issues, which is expected because this change improves first-pass conversion fidelity rather than backfilling existing targets. |
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1f5542e` | (see git log) |
+| `d59ba43` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
