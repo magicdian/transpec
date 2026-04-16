@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 20
+- **Total Sessions**: 21
 - **Last Active**: 2026-04-16
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~745 | Active |
+| `journal-1.md` | ~794 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 21 | 2026-04-16 | Harden Trellis postprocess contracts | `93fcc87`, `ce94d39` | `dev` |
 | 20 | 2026-04-16 | Improve openspec to trellis conversion fidelity | `1f5542e`, `d59ba43` | `dev` |
 | 19 | 2026-04-15 | Stabilize OpenSpec to Trellis Conversion | `be99db7` | `dev` |
 | 18 | 2026-04-15 | Submodule compatibility hardening | `3d440df6ee408863a6ab90cca39938d2ea50ad88` | `dev` |

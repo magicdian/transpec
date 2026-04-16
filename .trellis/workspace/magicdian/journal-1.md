@@ -743,3 +743,52 @@ Implemented deterministic OpenSpec/Trellis entity IDs, reconciled enhanced-analy
 ### Next Steps
 
 - None - task complete
+
+
+## Session 21: Harden Trellis postprocess contracts
+
+**Date**: 2026-04-16
+**Task**: Harden Trellis postprocess contracts
+**Branch**: `dev`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+| Area | Description |
+|------|-------------|
+| Deterministic postprocess | Grounded Trellis workflow and spec indexes, generated missing cross-layer/code-reuse guides, and rewrote managed indexes to avoid broken references. |
+| Archived task mapping | Normalized archived OpenSpec imports to completed historical Trellis tasks with stable lifecycle fields and completion timestamps. |
+| Validation | Added checks for baseline skeleton leftovers, broken markdown references, broken task-context JSONL references, and inconsistent archived lifecycle metadata. |
+| Regression coverage | Extended runtime compatibility, postprocess, and conversion validation tests for the real-project failure modes found during xgit verification. |
+| Spec sync | Updated backend conversion pipeline and adapter pattern docs to reflect the new deterministic postprocess and archived-task contracts. |
+
+**Verification**:
+- `npx vitest run src/cli/commands/runtime-compat.test.ts src/cli/commands/postprocess.test.ts src/core/validation/conversion.test.ts`
+- `npm run build`
+- `node dist/cli/index.js validate --path /Users/magicdian/Documents/personal_project/xgit` to confirm the old xgit output is now flagged with the expected contract violations prior to re-apply.
+
+**Notes**:
+- This session used automated verification only; no separate human/manual runtime test was performed in the converted xgit tree.
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `93fcc87` | (see git log) |
+| `ce94d39` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
