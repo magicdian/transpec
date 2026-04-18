@@ -88,7 +88,7 @@ export class CodexAdapter implements IdeAdapter {
     const content = `---
 name: transpec-preprocess
 description: Prepare RAW IR and execute source-specific preprocess workflow.
-license: MIT
+license: Apache-2.0
 compatibility: Requires transpec CLI.
 metadata:
   author: transpec
@@ -117,7 +117,7 @@ ${body}
     const content = `---
 name: transpec-apply
 description: Apply deterministic transform/emit and execute target-specific postprocess workflow.
-license: MIT
+license: Apache-2.0
 compatibility: Requires transpec CLI.
 metadata:
   author: transpec

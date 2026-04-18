@@ -1,0 +1,5 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Package metadata and docs release work should stay explicit and verified."}
+{"file": ".trellis/spec/backend/testing-guidelines.md", "reason": "Validate packaging changes with the existing test/build workflow."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Search repeated metadata/constants before updating publish configuration and license strings."}
