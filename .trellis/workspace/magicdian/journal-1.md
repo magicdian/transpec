@@ -792,3 +792,42 @@ Implemented deterministic OpenSpec/Trellis entity IDs, reconciled enhanced-analy
 ### Next Steps
 
 - None - task complete
+
+
+## Session 22: Publish transpec to npm
+
+**Date**: 2026-04-18
+**Task**: Publish transpec to npm
+**Branch**: `dev`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+| Area | Description |
+|------|-------------|
+| npm package | Prepared `@magicdian/transpec` for public npm release with corrected package metadata, publish payload control, Apache-2.0 alignment, and version bump to `2604.18.1` |
+| README | Added English and Chinese GitHub-facing READMEs, package-level npm READMEs, badges, and an agent-first usage flow centered on `$transpec-preprocess` and `$transpec-apply` |
+| Specs | Updated backend quality spec with the published CLI metadata and README badge contract, including use of GitHub license badges and `main` branch license links |
+| Verification | Ran `npm run build`, `npx vitest run`, and `npm pack --dry-run` for the CLI package; user confirmed npm publish succeeded |
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f3e5166` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
