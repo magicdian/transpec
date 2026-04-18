@@ -1,0 +1,9 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "CLI/core layering and runtime vs built-in directory boundaries"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Fail-fast CLI error handling and user messaging"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Structured module logging for CLI/core changes"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Strict TypeScript and public API changes"}
+{"file": ".trellis/spec/backend/testing-guidelines.md", "reason": "Need regression tests for workflow and asset generation"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Config to generated assets to agent command data flow"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Centralize skill path resolution and adapter content generation patterns"}

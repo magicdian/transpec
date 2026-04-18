@@ -1,0 +1,8 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/testing-guidelines.md", "reason": "Required tests for bug fix in CLI/core logging"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "CLI fail-fast logging and fallback handling"}
+{"file": "packages/cli/src/core/logging/logger.ts", "reason": "Existing logger implementation and file persistence gap"}
+{"file": "packages/cli/src/cli/utils/project-config.ts", "reason": "Current project logging config schema and loader"}
+{"file": "packages/cli/src/cli/commands/init.ts", "reason": "Config generation defaults for transpec projects"}
+{"file": "packages/cli/src/cli/commands/preprocess.ts", "reason": "Representative CLI command logging setup"}

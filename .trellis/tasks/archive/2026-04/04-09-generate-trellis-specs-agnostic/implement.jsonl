@@ -1,0 +1,2 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": "packages/cli/.transpec/skills/generate-trellis-specs/SKILL.md", "reason": "The file we're modifying - need to make it language-agnostic"}

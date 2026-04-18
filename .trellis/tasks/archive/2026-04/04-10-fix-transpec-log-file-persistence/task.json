@@ -1,0 +1,50 @@
+{
+  "id": "fix-transpec-log-file-persistence",
+  "name": "fix-transpec-log-file-persistence",
+  "title": "Fix transpec log file persistence",
+  "description": "",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "priority": "P2",
+  "creator": "magicdian",
+  "assignee": "magicdian",
+  "createdAt": "2026-04-10",
+  "completedAt": "2026-04-10",
+  "branch": null,
+  "base_branch": "dev",
+  "worktree_path": null,
+  "current_phase": 0,
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement"
+    },
+    {
+      "phase": 2,
+      "action": "check"
+    },
+    {
+      "phase": 3,
+      "action": "finish"
+    },
+    {
+      "phase": 4,
+      "action": "create-pr"
+    }
+  ],
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "packages/cli/src/cli/utils/logging.ts",
+    "packages/cli/src/core/logging/logger.ts",
+    "packages/cli/src/cli/utils/logging.test.ts",
+    "packages/cli/src/core/logging/logger.test.ts",
+    ".trellis/spec/backend/logging-guidelines.md"
+  ],
+  "notes": "2026-04-10: Completed implementation and verification for log file persistence.\n- Commands now use configureProjectLogger with project config fallback behavior.\n- init writes default file logging config to .transpec/config.yaml.\n- Logger persists JSON logs to disk and supports file rotation.\n- Added tests for config-driven logger setup and file persistence.\n- Updated backend code-spec in .trellis/spec/backend/logging-guidelines.md with executable contract details.",
+  "meta": {}
+}

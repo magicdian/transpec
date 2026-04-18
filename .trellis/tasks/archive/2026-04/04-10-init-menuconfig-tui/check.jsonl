@@ -1,0 +1,9 @@
+{"file": ".opencode/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".opencode/commands/trellis/check-backend.md", "reason": "Backend check spec"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Review strict typing and error handling expectations"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Verify logger semantics and config compatibility"}
+{"file": ".trellis/spec/backend/testing-guidelines.md", "reason": "Check test coverage expectations for new feature"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Validate helper reuse and avoid copy-paste branches"}
+{"file": "packages/cli/src/cli/commands/init.ts", "reason": "Regression check against existing init behavior and output semantics"}
+{"file": "packages/cli/src/cli/utils/logging.ts", "reason": "Validate logging.file.enabled behavior against config output"}
+{"file": "packages/cli/src/cli/commands/convert.ts", "reason": "Cross-check framework validation and user-facing errors"}

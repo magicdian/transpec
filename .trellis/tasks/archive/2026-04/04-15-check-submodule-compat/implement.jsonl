@@ -1,0 +1,6 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/conversion-pipeline.md", "reason": "Skill runtime files and adapter behavior must preserve preprocess/apply/postprocess contracts"}
+{"file": ".trellis/spec/backend/framework-adapter-pattern.md", "reason": "Adapter compatibility review for OpenSpec and Trellis parsing/emission contracts"}
+{"file": ".trellis/spec/backend/testing-guidelines.md", "reason": "Any required compatibility fix should include regression coverage"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Search for all mirrored skill/runtime paths before editing"}

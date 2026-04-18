@@ -1,0 +1,6 @@
+{"file": ".opencode/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".opencode/commands/trellis/check.md", "reason": "Code quality check spec"}
+{"file": ".trellis/spec/backend/conversion-pipeline.md", "reason": "Check converted runtime artifacts and validation coverage"}
+{"file": ".trellis/spec/backend/framework-adapter-pattern.md", "reason": "Review parse/emit contracts and archive placement behavior"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Review cross-layer runtime contract and audit gaps"}
+{"file": ".trellis/spec/backend/ir-design-principles.md", "reason": "Review source provenance preservation and entity/runtime semantics"}

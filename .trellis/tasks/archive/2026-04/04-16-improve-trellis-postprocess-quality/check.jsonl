@@ -1,0 +1,7 @@
+{"file": ".opencode/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".opencode/commands/trellis/check.md", "reason": "Code quality check spec"}
+{"file": ".trellis/spec/backend/framework-adapter-pattern.md", "reason": "Check Trellis emit/archive semantics"}
+{"file": ".trellis/spec/backend/conversion-pipeline.md", "reason": "Check runtime artifact contracts after changes"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Check for duplicated path/link rules"}
+{"file": ".trellis/spec/backend/testing-guidelines.md", "reason": "Check regression coverage for real-project failures"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Verify emitted docs/jsonl remain consumable downstream"}
