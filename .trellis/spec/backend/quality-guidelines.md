@@ -325,3 +325,113 @@ await runTargetMenu(draft);
 await runTargetMenu(draft);
 focusRowId = 'edit-target';
 ```
+
+## Scenario: Published CLI Package Metadata And README Badge Contract
+
+### 1. Scope / Trigger
+- Trigger: changing `packages/cli/package.json`, package-level README files, or root README badge/link content for the published `@magicdian/transpec` package.
+- This is contract-level because npm package metadata, publish payload shape, and README badge links directly affect the public package page and release usability.
+
+### 2. Signatures
+
+```json
+{
+  "name": "@magicdian/transpec",
+  "version": "YYMM.D.B",
+  "main": "dist/cli/index.js",
+  "types": "dist/cli/index.d.ts",
+  "files": ["bin", "dist", "README.md", "README_CN.md"],
+  "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
+```
+
+```bash
+npm run build
+npx vitest run
+NPM_CONFIG_CACHE=/tmp/transpec-npm-cache npm pack --dry-run
+```
+
+### 3. Contracts
+
+Package metadata contract:
+- `description` must present `transpec` as a universal conversion framework, while naming OpenSpec -> Trellis only as the currently production-ready workflow.
+- `main` and `types` must point at built runtime entrypoints that actually exist after `npm run build`.
+- `files` must whitelist runtime assets and package docs only; do not rely on implicit npm ignore behavior.
+- `license` must match the repository root `LICENSE` file (`Apache-2.0`).
+
+Build output contract:
+- `npm run build` must remove stale `dist/` output before compiling, otherwise removed test files can remain publishable.
+- `packages/cli/tsconfig.json` must exclude `src/**/*.test.ts` and `src/test/**/*` from publishable build output.
+
+README / badge contract:
+- Root README files are the full GitHub-facing docs; package README files are short npm entry docs that link back to the repo guides.
+- License badges must use the GitHub license badge endpoint, not the npm license endpoint for this scoped package.
+- Static license links in README badges must point to the stable `main` branch path:
+  `https://github.com/magicdian/transpec/blob/main/LICENSE`
+
+### 4. Validation & Error Matrix
+
+| Condition | Expected behavior |
+|-----------|-------------------|
+| `npm pack --dry-run` includes `src/` or tests | Fix `files`, build cleanup, or `tsconfig` excludes before publishing |
+| `main` points to missing file | Fix package entry fields before publish |
+| README license badge shows `package not found` | Use GitHub license badge instead of npm license badge |
+| README license link targets `dev` or another moving branch | Update link to `main` for stable public docs |
+| Package metadata license differs from repo `LICENSE` | Align package metadata to repo license before publish |
+
+### 5. Good / Base / Bad Cases
+
+- Good:
+  - `description` says universal framework first, and OpenSpec -> Trellis as the currently complete workflow.
+  - `npm pack --dry-run` shows only `bin`, `dist`, and package README files.
+  - README license badge renders and links to `main/LICENSE`.
+- Base:
+  - npm package page has a short package README and links to full GitHub docs.
+- Bad:
+  - README uses `img.shields.io/npm/l/...` and renders `package not found`.
+  - `dist/` still contains compiled test files from a previous build.
+  - `main` points to `dist/index.js` when only `dist/cli/index.js` exists.
+
+### 6. Tests Required
+
+- Packaging verification:
+  - run `npm run build`
+  - run `npx vitest run`
+  - run `NPM_CONFIG_CACHE=/tmp/transpec-npm-cache npm pack --dry-run`
+- Assertion points:
+  - tarball contains no `src/` sources or compiled test artifacts
+  - tarball still contains `bin/transpec.js`, runtime `dist/`, and package README files
+  - package entrypoints in `package.json` match files present in `dist/`
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```md
+[![license](https://img.shields.io/npm/l/%40magicdian%2Ftranspec)](...)
+```
+
+```json
+{
+  "main": "dist/index.js"
+}
+```
+
+#### Correct
+
+```md
+[![license](https://img.shields.io/github/license/magicdian/transpec?style=flat-square)](https://github.com/magicdian/transpec/blob/main/LICENSE)
+```
+
+```json
+{
+  "main": "dist/cli/index.js",
+  "types": "dist/cli/index.d.ts"
+}
+```
